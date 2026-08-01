@@ -560,8 +560,8 @@ export class OCRService {
 
       if (response.ok) {
         const data = await response.json();
-        rawOcrText = data.rawText || '';
-        parsed = data.parsed || {};
+        rawOcrText = data.rawText || JSON.stringify(data);
+        parsed = (data.parsed && typeof data.parsed === 'object') ? data.parsed : data;
         return OCRService.buildResult(parsed, rawOcrText, durationMs);
       }
 
