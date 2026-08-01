@@ -90,7 +90,12 @@ STRICT EXTRACTION RULES:
 5. Return ONLY the raw valid JSON object. Do NOT include markdown code fences (\`\`\`json), comments, explanations, or additional wrapper keys.`;
 
 function getGeminiApiKey(): string {
-  return (process.env.GEMINI_API_KEY || '').trim();
+  return (
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+    ''
+  ).trim();
 }
 
 /**
