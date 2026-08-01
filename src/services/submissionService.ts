@@ -177,21 +177,38 @@ export async function updateMergedFields(params: UpdateMergedFieldsParams): Prom
   const confidenceScore = computeConfidenceScore(params.updatedFields);
   const timestamp = new Date().toISOString();
 
-  await supabase
-    .from('forms')
-    .update({
+  // Upsert into forms table using primary key 'id' (form_${submissionId})
+  const formId = `form_${params.submissionId}`;
+
+  const { error: formError } = await supabase.from('forms').upsert(
+    {
+      id:               formId,
+      submission_id:    params.submissionId,
+      user_id:          params.userId || 'anonymous',
+      form_title:       'Government Form Auto-Fill',
+      form_code:        'GOV-AUTO-2026',
+      status:           'PROCESSING',
       extracted_fields: params.updatedFields,
       raw_ocr_text:     params.rawOcrText || null,
       confidence_score: confidenceScore,
       updated_at:       timestamp,
-    })
-    .eq('submission_id', params.submissionId);
+    },
+    { onConflict: 'id' }
+  );
 
-  await supabase
+  if (formError) {
+    console.warn('[SubmissionService] updateMergedFields forms upsert warning:', formError.message);
+  }
+
+  const { error: subError } = await supabase
     .from('submissions')
     .update({
       confidence_score: confidenceScore,
       updated_at:       timestamp,
     })
     .eq('id', params.submissionId);
+
+  if (subError) {
+    console.warn('[SubmissionService] updateMergedFields submissions update warning:', subError.message);
+  }
 }

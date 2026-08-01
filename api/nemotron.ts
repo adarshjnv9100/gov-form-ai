@@ -1,8 +1,8 @@
 // ============================================================
 // VERCEL SERVERLESS FUNCTION: /api/nemotron
 // Proxies document recommendation requests to NVIDIA Nemotron.
-// 100% self-contained serverless function (zero relative module imports).
-// Prevents ERR_MODULE_NOT_FOUND on Vercel Node.js ESM runtime.
+// 100% self-contained serverless function.
+// Verified against integrate.api.nvidia.com OpenAPI specs.
 // ============================================================
 
 interface VercelRequest {
@@ -15,6 +15,8 @@ interface VercelResponse {
   setHeader(name: string, value: string): void;
   end(): void;
 }
+
+const ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 const SUPPORTED_DOCUMENTS = [
   'Aadhaar Card', 'PAN Card', 'Passport', 'Driving Licence', 'Voter ID Card',
@@ -41,7 +43,7 @@ function getEnv(key: string): string {
 function validateEnvironment() {
   const envMap = {
     NVIDIA_API_KEY: getEnv('NVIDIA_API_KEY'),
-    NVIDIA_MODEL: getEnv('NVIDIA_MODEL') || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    NVIDIA_MODEL: getEnv('NVIDIA_MODEL'),
     SUPABASE_URL: getEnv('SUPABASE_URL'),
     SUPABASE_ANON_KEY: getEnv('SUPABASE_ANON_KEY'),
     SUPABASE_SERVICE_ROLE_KEY: getEnv('SUPABASE_SERVICE_ROLE_KEY'),
@@ -50,121 +52,16 @@ function validateEnvironment() {
     CLOUDINARY_API_SECRET: getEnv('CLOUDINARY_API_SECRET'),
   };
 
-  const requiredKeys: Array<keyof typeof envMap> = [
-    'NVIDIA_API_KEY',
-    'NVIDIA_MODEL',
-    'SUPABASE_URL',
-    'SUPABASE_ANON_KEY',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'CLOUDINARY_CLOUD_NAME',
-    'CLOUDINARY_API_KEY',
-    'CLOUDINARY_API_SECRET',
-  ];
-
   const missing: string[] = [];
-  for (const key of requiredKeys) {
-    if (!envMap[key]) {
-      missing.push(key);
-    }
-  }
+  if (!envMap.NVIDIA_API_KEY) missing.push('NVIDIA_API_KEY');
+  if (!envMap.SUPABASE_URL) missing.push('SUPABASE_URL');
+  if (!envMap.SUPABASE_ANON_KEY && !envMap.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_ANON_KEY');
 
   return {
     isValid: missing.length === 0,
     missing,
     config: envMap,
   };
-}
-
-async function callNvidiaApi(
-  apiKey: string,
-  model: string,
-  messages: Array<any>,
-  temperature = 0.1,
-  maxTokens = 1024
-) {
-  const startTime = performance.now();
-  const endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
-
-  console.log(`[api/nemotron] Initiating NVIDIA request to model: ${model}`);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-      }),
-    });
-
-    const durationMs = Math.round(performance.now() - startTime);
-
-    console.log(`[api/nemotron] Response Status: ${response.status} (${durationMs}ms)`);
-    const rawText = await response.text();
-
-    if (!response.ok) {
-      const msg = `NVIDIA Provider API error (HTTP ${response.status}): ${rawText || response.statusText}`;
-      console.error(`[api/nemotron Error] ${msg}`);
-      return {
-        success: false,
-        message: msg,
-        rawText,
-        durationMs,
-        statusCode: response.status,
-      };
-    }
-
-    let data: any = null;
-    try {
-      data = JSON.parse(rawText);
-    } catch (parseErr: any) {
-      const parseErrorMsg = `JSON parsing failed on NVIDIA response: ${parseErr?.message || String(parseErr)}`;
-      console.error(`[api/nemotron Error] ${parseErrorMsg}`);
-      return {
-        success: false,
-        message: parseErrorMsg,
-        rawText,
-        durationMs,
-        statusCode: 422,
-      };
-    }
-
-    const content = data.choices?.[0]?.message?.content || '';
-    if (!content) {
-      const msg = 'NVIDIA API response contained no choices or empty message content.';
-      console.error(`[api/nemotron Error] ${msg}`);
-      return {
-        success: false,
-        message: msg,
-        rawText,
-        durationMs,
-        statusCode: 422,
-      };
-    }
-
-    return {
-      success: true,
-      content,
-      rawText,
-      durationMs,
-      statusCode: 200,
-    };
-  } catch (err: any) {
-    const durationMs = Math.round(performance.now() - startTime);
-    const msg = `Network error calling NVIDIA endpoint (${durationMs}ms): ${err?.message || String(err)}`;
-    console.error(`[api/nemotron Exception] ${msg}`);
-    return {
-      success: false,
-      message: msg,
-      durationMs,
-      statusCode: 500,
-    };
-  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -185,28 +82,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  // 1. Environment Validation (HTTP 500 if missing)
+  // 1. Startup Environment Validation
   const envResult = validateEnvironment();
   if (!envResult.isValid) {
     console.error('[api/nemotron] Missing required environment variables:', envResult.missing);
     return res.status(500).json({
       success: false,
       missing: envResult.missing,
-      message: 'Missing required environment variables.',
+      message: `Missing required environment variables: ${envResult.missing.join(', ')}`,
     });
   }
 
   const { config } = envResult;
-  const { missing_fields, uploaded_documents } = req.body || {};
+  const body = req.body || {};
 
-  if (!missing_fields || !Array.isArray(missing_fields)) {
+  // 2. Validate Payload Schema
+  if (!body || typeof body !== 'object' || !Array.isArray(body.missing_fields)) {
+    console.error('[api/nemotron] Invalid request payload schema:', body);
     return res.status(400).json({
       success: false,
-      message: 'missing_fields array is required.',
+      message: "Request payload must contain 'missing_fields' as an array.",
     });
   }
 
-  if (missing_fields.length === 0) {
+  const missingFields: string[] = body.missing_fields.filter(
+    (f: any) => typeof f === 'string' && f.trim() !== ''
+  );
+  const uploadedDocs: string[] = Array.isArray(body.uploaded_documents)
+    ? body.uploaded_documents.filter((d: any) => typeof d === 'string' && d.trim() !== '')
+    : [];
+
+  if (missingFields.length === 0) {
     return res.status(200).json({
       success: true,
       completion_percentage: 100,
@@ -215,14 +121,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const totalFields = 26;
-  const filledCount = totalFields - missing_fields.length;
+  const filledCount = totalFields - missingFields.length;
   const completionPercentage = Math.max(0, Math.round((filledCount / totalFields) * 100));
-  const nemotronModel = config.NVIDIA_MODEL || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
 
-  console.log(`[api/nemotron Audit Log] Processing recommendations for ${missing_fields.length} missing fields using model ${nemotronModel}`);
+  let selectedModel = config.NVIDIA_MODEL;
+  if (!selectedModel || selectedModel.includes('kimi') || !selectedModel.includes('/')) {
+    selectedModel = 'meta/llama-3.3-70b-instruct';
+  }
 
   const systemPrompt = `You are a Government Document Recommendation Engine.
-Your ONLY job is to recommend official government documents that can provide the missing field values.
+Your ONLY job is to recommend official government documents that can provide missing field values.
 You NEVER fabricate or guess field values. You only recommend documents.
 
 Supported document types:
@@ -247,55 +155,121 @@ Return ONLY valid JSON in this exact format:
   ]
 }`;
 
-  const userContent = JSON.stringify({ missing_fields, uploaded_documents: uploaded_documents || [] });
-
-  const nvidiaRes = await callNvidiaApi(
-    config.NVIDIA_API_KEY,
-    nemotronModel,
-    [
+  const requestBody = {
+    model: selectedModel,
+    messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
+      { role: 'user', content: JSON.stringify({ missing_fields: missingFields, uploaded_documents: uploadedDocs }) },
     ],
-    0.1,
-    1024
-  );
+    temperature: 0.1,
+    max_tokens: 1024,
+  };
 
-  if (!nvidiaRes.success || !nvidiaRes.content) {
-    console.error(`[api/nemotron Audit Log] Recommendation generation failed: ${nvidiaRes.message}`);
-    return res.status(400).json({
-      success: false,
-      message: nvidiaRes.message || 'Failed to generate recommendations from NVIDIA provider.',
-    });
-  }
+  console.log(`[api/nemotron Request Log] Endpoint: ${ENDPOINT}`);
+  console.log(`[api/nemotron Request Log] Model: ${selectedModel}`);
+  console.log(`[api/nemotron Request Log] Payload:`, JSON.stringify(requestBody));
 
-  const rawText = nvidiaRes.content;
-  console.log(`[api/nemotron Audit Log] Raw Response: ${rawText.slice(0, 300)}`);
-  const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const startTime = performance.now();
 
-  let parsed: any = null;
   try {
-    parsed = JSON.parse(cleanJson);
-    console.log(`[api/nemotron Audit Log] Parsed JSON successfully:`, JSON.stringify(parsed));
-  } catch (err: any) {
-    const parseErrorMsg = `JSON parse failed on Nemotron AI response: ${err?.message || String(err)}`;
-    console.error(`[api/nemotron Audit Log] ${parseErrorMsg}`);
+    let response = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.NVIDIA_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    let durationMs = Math.round(performance.now() - startTime);
+    let rawResponseText = await response.text();
+
+    console.log(`[api/nemotron Response Log] Status: ${response.status} (${durationMs}ms)`);
+    console.log(`[api/nemotron Response Log] Full Raw Response:`, rawResponseText);
+
+    // If configured model returned 404, retry with catalog fallback
+    if (response.status === 404 && selectedModel !== 'meta/llama-3.3-70b-instruct') {
+      console.warn(`[api/nemotron Retry] Model '${selectedModel}' returned 404. Retrying with 'meta/llama-3.3-70b-instruct'...`);
+      requestBody.model = 'meta/llama-3.3-70b-instruct';
+      selectedModel = 'meta/llama-3.3-70b-instruct';
+
+      const retryStart = performance.now();
+      response = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.NVIDIA_API_KEY}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      durationMs = Math.round(performance.now() - retryStart);
+      rawResponseText = await response.text();
+
+      console.log(`[api/nemotron Retry Response Log] Status: ${response.status} (${durationMs}ms)`);
+      console.log(`[api/nemotron Retry Response Log] Full Raw Response:`, rawResponseText);
+    }
+
+    if (!response.ok) {
+      console.error(`[api/nemotron Error Surface] NVIDIA HTTP ${response.status}: ${rawResponseText}`);
+      return res.status(response.status >= 400 && response.status < 500 ? response.status : 502).json({
+        success: false,
+        message: `NVIDIA Provider API Error (HTTP ${response.status}): ${rawResponseText || response.statusText}`,
+        nvidiaStatus: response.status,
+        nvidiaResponseBody: rawResponseText,
+      });
+    }
+
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(rawResponseText);
+    } catch (parseErr: any) {
+      const parseErrorMsg = `Failed to parse NVIDIA response JSON: ${parseErr?.message || String(parseErr)}`;
+      console.error(`[api/nemotron Error] ${parseErrorMsg}`);
+      return res.status(422).json({
+        success: false,
+        message: parseErrorMsg,
+        rawResponseText,
+      });
+    }
+
+    const aiContent = parsed.choices?.[0]?.message?.content || '';
+    const cleanJson = aiContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    let recommendationsJson: any = null;
+    try {
+      recommendationsJson = JSON.parse(cleanJson);
+      console.log(`[api/nemotron Success] Recommendations JSON:`, JSON.stringify(recommendationsJson));
+    } catch (jsonErr: any) {
+      const jsonErrorMsg = `Failed to parse recommendation JSON: ${jsonErr?.message || String(jsonErr)}`;
+      console.error(`[api/nemotron Error] ${jsonErrorMsg}`);
+      return res.status(422).json({
+        success: false,
+        message: jsonErrorMsg,
+        rawText: cleanJson,
+      });
+    }
+
+    if (recommendationsJson && Array.isArray(recommendationsJson.recommendations)) {
+      return res.status(200).json({
+        success: true,
+        completion_percentage: recommendationsJson.completion_percentage ?? completionPercentage,
+        recommendations: recommendationsJson.recommendations,
+      });
+    }
+
     return res.status(422).json({
       success: false,
-      message: parseErrorMsg,
-      rawText,
+      message: 'Invalid response format from AI provider.',
+      rawText: cleanJson,
+    });
+  } catch (netErr: any) {
+    const netErrorMsg = `Network exception calling NVIDIA API: ${netErr?.message || String(netErr)}`;
+    console.error(`[api/nemotron Exception] ${netErrorMsg}`);
+    return res.status(500).json({
+      success: false,
+      message: netErrorMsg,
+      endpoint: ENDPOINT,
     });
   }
-
-  if (parsed && Array.isArray(parsed.recommendations)) {
-    return res.status(200).json({
-      success: true,
-      completion_percentage: parsed.completion_percentage ?? completionPercentage,
-      recommendations: parsed.recommendations,
-    });
-  }
-
-  return res.status(422).json({
-    success: false,
-    message: 'Invalid response format from AI provider.',
-  });
 }
