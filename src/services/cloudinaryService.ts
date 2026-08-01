@@ -19,8 +19,8 @@ export class CloudinaryService {
   }
 
   /**
-   * Uploads raw PDF binary blob directly to Cloudinary REST API.
-   * Enforces resource_type: "raw" with binary FormData blob preservation.
+   * Uploads raw PDF or Image binary blob directly to Cloudinary REST API.
+   * Enforces resource_type: "raw" for PDFs and resource_type: "image" for images.
    */
   public static async uploadFile(
     file: File | Blob,
@@ -30,15 +30,15 @@ export class CloudinaryService {
     const cloudName = this.cloudName;
     const uploadPreset = this.uploadPreset;
 
-    const fileName = (file as File).name || `form_${Date.now()}.pdf`;
+    const fileName = (file as File).name || `document_${Date.now()}.pdf`;
     const isPdf = file.type === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
-    
-    // Always use resource_type: "raw" for PDF files
-    const resourceType = forcedResourceType || (isPdf ? 'raw' : 'auto');
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileName);
+
+    // Enforce resource_type = "raw" for PDFs, resource_type = "image" for images
+    const resourceType = forcedResourceType || (isPdf ? 'raw' : isImage ? 'image' : 'raw');
     const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
 
     const formData = new FormData();
-    // Pass raw Blob directly into FormData
     formData.append('file', file, fileName);
     formData.append('upload_preset', uploadPreset);
 
@@ -60,9 +60,19 @@ export class CloudinaryService {
           try {
             const response = JSON.parse(xhr.responseText);
             const docType = determineDocumentType(fileName);
+            const secureUrl = response.secure_url;
+
+            // Audit Log Cloudinary Upload Details
+            console.log('==================== CLOUDINARY UPLOAD SUCCESS ====================');
+            console.log('uploaded filename:', fileName);
+            console.log('public_id:', response.public_id);
+            console.log('resource_type:', response.resource_type || resourceType);
+            console.log('secure_url:', secureUrl);
+            console.log('final URL sent to Gemini:', secureUrl);
+            console.log('===================================================================');
 
             resolve({
-              secure_url: response.secure_url,
+              secure_url: secureUrl,
               public_id: response.public_id,
               asset_id: response.asset_id,
               original_filename: response.original_filename || fileName,
@@ -72,19 +82,26 @@ export class CloudinaryService {
               documentType: docType,
             });
           } catch (e) {
+            console.error('[CloudinaryService Error] Failed to parse Cloudinary upload response JSON:', e);
             reject(new Error('Failed to parse Cloudinary response JSON.'));
           }
         } else {
           try {
             const errorRes = JSON.parse(xhr.responseText);
+            console.error('[CloudinaryService Error] Upload rejected by Cloudinary:', errorRes);
             reject(new Error(errorRes.error?.message || `Cloudinary upload failed with status ${xhr.status}`));
           } catch {
+            console.error(`[CloudinaryService Error] Upload failed with HTTP status ${xhr.status}`);
             reject(new Error(`Cloudinary upload failed with HTTP status ${xhr.status}`));
           }
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error during direct Cloudinary upload.'));
+      xhr.onerror = () => {
+        console.error('[CloudinaryService Error] Network error during direct Cloudinary upload.');
+        reject(new Error('Network error during direct Cloudinary upload.'));
+      };
+
       xhr.send(formData);
     });
   }

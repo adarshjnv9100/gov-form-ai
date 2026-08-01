@@ -2,7 +2,8 @@
 // VERCEL SERVERLESS FUNCTION: /api/ocr
 // Gemini 2.5 Flash Multimodal OCR Backend Endpoint.
 // Uses official Google Generative AI SDK (@google/genai).
-// Receives { documentUrl }, processes image/PDF via Gemini 2.5 Flash.
+// Receives { documentUrl }, validates URL reachability via HEAD request,
+// processes image/PDF via Gemini 2.5 Flash.
 // Returns validated 26-field canonical JSON with missing fields set to null.
 // Never exposes GEMINI_API_KEY to the frontend.
 // ============================================================
@@ -99,6 +100,31 @@ function getGeminiApiKey(): string {
 }
 
 /**
+ * Validates that documentUrl returns HTTP 200 OK via HEAD/GET request before invoking Gemini.
+ */
+async function validateDocumentUrlReachable(documentUrl: string): Promise<{ reachable: boolean; status: number; statusText: string }> {
+  try {
+    let response = await fetch(documentUrl, { method: 'HEAD' }).catch(() => null);
+    if (!response || response.status === 405 || response.status === 403) {
+      // Fallback to GET request if HEAD method is restricted by CDN
+      response = await fetch(documentUrl, { method: 'GET', headers: { Range: 'bytes=0-10' } }).catch(() => null);
+    }
+
+    if (response && (response.status === 200 || response.status === 206)) {
+      return { reachable: true, status: 200, statusText: 'OK' };
+    }
+
+    return {
+      reachable: false,
+      status: response ? response.status : 404,
+      statusText: response ? response.statusText : 'Not Found',
+    };
+  } catch (err: any) {
+    return { reachable: false, status: 500, statusText: err?.message || 'Network Exception' };
+  }
+}
+
+/**
  * Downloads document from Cloudinary URL and returns base64 inline data part.
  */
 async function fetchDocumentInlinePart(documentUrl: string): Promise<{ inlineData: { data: string; mimeType: string } }> {
@@ -183,6 +209,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({
       success: false,
       error: "Invalid Request: 'documentUrl' must be a valid non-empty string.",
+    });
+  }
+
+  // Requirement 9: Validate Cloudinary URL with HEAD request before calling Gemini
+  const validation = await validateDocumentUrlReachable(documentUrl);
+  if (!validation.reachable) {
+    console.error(`[api/ocr Error] Cloudinary URL validation failed: HTTP ${validation.status} ${validation.statusText} for URL: ${documentUrl}`);
+    return res.status(400).json({
+      success: false,
+      error: `Cloudinary URL Validation Failed: Document URL is not reachable (HTTP ${validation.status} ${validation.statusText}). URL: ${documentUrl}`,
+      documentUrl,
     });
   }
 
