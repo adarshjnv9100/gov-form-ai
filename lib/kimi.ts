@@ -1,9 +1,11 @@
 // ============================================================
 // LIB/KIMI.TS
-// Reusable Kimi Vision API Client & Error Handler (Server-Side Only).
+// Reusable Kimi Vision API Client & Comprehensive Debug Logger.
 // Reads KIMI_API_KEY from environment variables.
-// Never exposes API key to the frontend.
-// Handles 401, 429, 500, timeouts, and invalid JSON gracefully.
+// Never exposes API key to the frontend or in logs.
+// Logged fields: Cloudinary URL, Model, Prompt, Payload, HTTP Status,
+// Response Time, Raw Response, Parsed JSON.
+// Returns descriptive errors on failure — never silently swallows errors.
 // ============================================================
 
 export interface KimiVisionResponse {
@@ -12,6 +14,7 @@ export interface KimiVisionResponse {
   rawText?: string;
   error?: string;
   statusCode?: number;
+  durationMs?: number;
 }
 
 export function getKimiApiKey(): string {
@@ -62,8 +65,8 @@ export function formatCloudinaryVisionUrl(url: string): string {
 
 /**
  * Reusable function to call Kimi Vision API directly on a Cloudinary URL.
- * Never exposes the API key to the frontend.
- * Handles 401, 429, 500, timeouts, and invalid JSON with descriptive errors.
+ * Never exposes the API key to the frontend or in logs.
+ * Performs detailed pre-flight and post-flight debug logging.
  */
 export async function callKimiVision(
   documentUrl: string,
@@ -73,18 +76,22 @@ export async function callKimiVision(
   const { apiKey, endpoint, model } = getKimiConfig();
 
   if (!apiKey) {
+    const error = 'Missing environment variable: KIMI_API_KEY is not configured on the server.';
+    console.error(`[OCR Debug Log] Error: ${error}`);
     return {
       success: false,
       statusCode: 401,
-      error: 'Unauthorized: KIMI_API_KEY environment variable is not configured.',
+      error,
     };
   }
 
   if (!documentUrl || typeof documentUrl !== 'string' || !documentUrl.trim()) {
+    const error = "Invalid Request: 'documentUrl' parameter must be a non-empty string.";
+    console.error(`[OCR Debug Log] Error: ${error}`);
     return {
       success: false,
       statusCode: 400,
-      error: 'Invalid Request: documentUrl parameter must be a non-empty string.',
+      error,
     };
   }
 
@@ -105,6 +112,17 @@ export async function callKimiVision(
     max_tokens: 1024,
   };
 
+  // Log BEFORE Request (sanitized payload without API keys)
+  console.log('==================== OCR REQUEST DEBUG LOG ====================');
+  console.log('Cloudinary URL (Original):', documentUrl);
+  console.log('Cloudinary URL (Vision Target):', visionImageUrl);
+  console.log('Model:', model);
+  console.log('Endpoint:', endpoint);
+  console.log('Prompt:', prompt);
+  console.log('Payload:', JSON.stringify(payload, null, 2));
+  console.log('================================================================');
+
+  const startTime = performance.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -120,95 +138,92 @@ export async function callKimiVision(
     });
 
     clearTimeout(timeoutId);
+    const durationMs = Math.round(performance.now() - startTime);
+    const rawResponseText = await response.text();
 
-    // Handle 401 Unauthorized
+    // Log AFTER Request
+    console.log('==================== OCR RESPONSE DEBUG LOG ====================');
+    console.log('HTTP Status:', response.status);
+    console.log('Response Time:', `${durationMs}ms`);
+    console.log('Raw Response:', rawResponseText);
+    console.log('=================================================================');
+
     if (response.status === 401) {
-      return {
-        success: false,
-        statusCode: 401,
-        error: 'HTTP 401 Unauthorized: Invalid or expired KIMI_API_KEY credential.',
-      };
+      const error = 'HTTP 401 Unauthorized: Invalid API key or unauthorized access to vision endpoint.';
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: 401, durationMs, rawText: rawResponseText, error };
     }
 
-    // Handle 429 Rate Limit Exceeded
     if (response.status === 429) {
-      return {
-        success: false,
-        statusCode: 429,
-        error: 'HTTP 429 Rate Limit Exceeded: Kimi Vision API rate limit reached. Please retry shortly.',
-      };
-    }
-
-    // Handle 500 Provider Error
-    if (response.status >= 500) {
-      const errText = await response.text().catch(() => '');
-      return {
-        success: false,
-        statusCode: response.status,
-        error: `HTTP ${response.status} Provider Error: Kimi Vision service error (${errText || response.statusText}).`,
-      };
+      const error = 'HTTP 429 Rate Limit Exceeded: Vision API rate limit reached. Please retry in a moment.';
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: 429, durationMs, rawText: rawResponseText, error };
     }
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      return {
-        success: false,
-        statusCode: response.status,
-        error: `HTTP ${response.status} Error: ${errText || response.statusText}`,
-      };
+      const error = `HTTP ${response.status} Provider Error: ${rawResponseText || response.statusText}`;
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: response.status, durationMs, rawText: rawResponseText, error };
     }
 
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || '';
-
-    if (!rawContent || !rawContent.trim()) {
-      return {
-        success: false,
-        statusCode: 422,
-        error: 'Empty Response: Kimi Vision API returned no message content choices.',
-      };
+    let parsedOuter: any = null;
+    try {
+      parsedOuter = JSON.parse(rawResponseText);
+    } catch (parseErr: any) {
+      const error = `JSON Parse Error: Could not parse outer HTTP response JSON (${parseErr?.message}).`;
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: 422, durationMs, rawText: rawResponseText, error };
     }
 
-    // Clean markdown code fences if present
-    const cleanText = rawContent
+    const aiContent = parsedOuter.choices?.[0]?.message?.content || '';
+    if (!aiContent || !aiContent.trim()) {
+      const error = 'Empty AI Response: Vision model returned no text content in choices array.';
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: 422, durationMs, rawText: rawResponseText, error };
+    }
+
+    const cleanText = aiContent
       .replace(/```json/gi, '')
       .replace(/```/g, '')
       .trim();
 
-    let parsed: Record<string, any> = {};
+    let parsedJson: Record<string, any> = {};
     try {
-      parsed = JSON.parse(cleanText);
+      parsedJson = JSON.parse(cleanText);
+      console.log('==================== PARSED JSON DEBUG LOG ====================');
+      console.log(JSON.stringify(parsedJson, null, 2));
+      console.log('===============================================================');
     } catch (jsonErr: any) {
+      const error = `JSON Parse Error: Failed to parse extracted JSON content (${jsonErr?.message}). Raw text: "${cleanText.slice(0, 200)}"`;
+      console.error(`[OCR Debug Log] Error: ${error}`);
       return {
         success: false,
         statusCode: 422,
+        durationMs,
         rawText: cleanText,
-        error: `Invalid JSON Response: Failed to parse vision model response JSON (${jsonErr?.message}).`,
+        error,
       };
     }
 
     return {
       success: true,
       statusCode: 200,
+      durationMs,
       rawText: cleanText,
-      parsed,
+      parsed: parsedJson,
     };
   } catch (err: any) {
     clearTimeout(timeoutId);
+    const durationMs = Math.round(performance.now() - startTime);
 
-    // Handle Timeout
     if (err.name === 'AbortError') {
-      return {
-        success: false,
-        statusCode: 504,
-        error: `Gateway Timeout: Request to Kimi Vision API timed out after ${timeoutMs}ms.`,
-      };
+      const error = `Gateway Timeout: Request to Vision API timed out after ${timeoutMs}ms.`;
+      console.error(`[OCR Debug Log] Error: ${error}`);
+      return { success: false, statusCode: 504, durationMs, error };
     }
 
-    return {
-      success: false,
-      statusCode: 500,
-      error: `Network Error: ${err?.message || String(err)}`,
-    };
+    const error = `Network Exception: ${err?.message || String(err)}`;
+    console.error(`[OCR Debug Log] Error: ${error}`);
+    return { success: false, statusCode: 500, durationMs, error };
   }
 }

@@ -2,8 +2,10 @@
 // VERCEL SERVERLESS FUNCTION: /api/ocr
 // Kimi Vision OCR Endpoint using lib/kimi.ts
 // Receives { documentUrl }, calls Kimi Vision API directly on Cloudinary URL.
-// Returns ONLY canonical JSON with 26 required fields (missing = null).
-// Saves nothing, calls no databases, modifies no UI.
+// Logs: Cloudinary URL, Model, Prompt, Payload, HTTP Status, Response Time,
+// Raw Response, Parsed JSON.
+// Returns descriptive error JSON if parsing or API call fails.
+// Never silently returns empty JSON.
 // ============================================================
 
 import { callKimiVision } from '../lib/kimi.js';
@@ -105,14 +107,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { documentUrl } = req.body || {};
 
   if (!documentUrl || typeof documentUrl !== 'string' || documentUrl.trim() === '') {
-    return res.status(400).json(DEFAULT_CANONICAL_SCHEMA);
+    return res.status(400).json({
+      success: false,
+      error: "Payload verification failed: 'documentUrl' must be a non-empty string.",
+    });
   }
 
   const response = await callKimiVision(documentUrl, SYSTEM_PROMPT);
 
+  // Return descriptive error if processing failed — never silently return empty JSON
   if (!response.success || !response.parsed) {
-    console.warn(`[api/ocr] Kimi Vision processing warning (${response.statusCode}): ${response.error}`);
-    return res.status(200).json(DEFAULT_CANONICAL_SCHEMA);
+    const statusCode = response.statusCode && response.statusCode >= 400 && response.statusCode < 600
+      ? response.statusCode
+      : 500;
+
+    return res.status(statusCode).json({
+      success: false,
+      error: response.error || 'Failed to extract text from document using Kimi Vision API.',
+      rawText: response.rawText || null,
+      statusCode,
+    });
   }
 
   const extracted = response.parsed;
