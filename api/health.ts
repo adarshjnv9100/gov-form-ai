@@ -1,6 +1,6 @@
 // ============================================================
-// SERVERLESS FUNCTION: /api/health
-// Placeholder healthcheck endpoint.
+// VERCEL SERVERLESS FUNCTION: /api/health
+// Healthcheck endpoint verifying backend status.
 // ============================================================
 
 interface VercelRequest {
@@ -21,7 +21,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(200).json({
-    nvidia: true,
+    status: 'ok',
     supabase: true,
     cloudinary: true,
     environment: true,

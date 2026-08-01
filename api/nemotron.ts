@@ -1,6 +1,6 @@
 // ============================================================
-// SERVERLESS FUNCTION: /api/nemotron
-// Placeholder document recommendation endpoint for rebuilding AI integration from scratch.
+// VERCEL SERVERLESS FUNCTION: /api/nemotron
+// Clean document recommendation placeholder. Zero NVIDIA/Nemotron dependencies.
 // ============================================================
 
 interface VercelRequest {

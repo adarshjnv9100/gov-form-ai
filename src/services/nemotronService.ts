@@ -156,7 +156,7 @@ const FIELD_TO_DOCUMENTS: Record<string, { document: string; docTypeTag: string;
 export class NemotronService {
   /**
    * Gets document recommendations for missing fields.
-   * Calls backend /api/nemotron (never NVIDIA directly).
+   * Calls backend /api/nemotron placeholder route.
    * Falls back to a deterministic set-cover algorithm.
    */
   public static async getDocumentRecommendations(
