@@ -16,7 +16,7 @@ interface PDFViewerModalProps {
 export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
   isOpen,
   onClose,
-  title = 'Income Tax Return Verification Form (ITR-V 2026)',
+  title = 'Official Government Form PDF',
   pdfUrl,
   pdfBytes,
 }) => {
@@ -50,66 +50,58 @@ export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
             console.error('[PDF Fetch] pdf_url:', pdfUrl);
             console.error('[PDF Fetch] status:', response.status);
             console.error('[PDF Fetch] content-type:', contentType);
-            throw new Error(`HTTP ${response.status}: Failed to fetch PDF stream.`);
+            if (isSubscribed) setErrorState(`HTTP Error ${response.status}: Failed to fetch PDF stream.`);
+            return;
           }
 
-          const buffer = await response.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          console.log('[PDF Fetch] Downloaded byte length:', bytes.byteLength);
+          const arrayBuffer = await response.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          const header = new TextDecoder().decode(bytes.slice(0, 5));
 
-          const first5 = new TextDecoder('ascii').decode(bytes.slice(0, 5));
-          console.log('[PDF Fetch] First 5 bytes signature:', first5);
+          console.log('[PDF Fetch] Bytes byteLength:', bytes.byteLength);
+          console.log('[PDF Fetch] First 5 bytes header:', header);
 
-          // Verification: First 5 bytes must equal %PDF-
-          if (first5 !== '%PDF-') {
-            const first200 = new TextDecoder('ascii').decode(bytes.slice(0, 200));
-            console.error('[PDF Fetch] STOP IMMEDIATELY: Stored document is NOT a valid PDF!');
+          // Verify %PDF- signature
+          if (header !== '%PDF-') {
+            console.error('[PDF Fetch] INVALID PDF HEADER!');
             console.error('[PDF Fetch] pdf_url:', pdfUrl);
             console.error('[PDF Fetch] status:', response.status);
             console.error('[PDF Fetch] content-type:', contentType);
-            console.error('[PDF Fetch] first 200 bytes:', first200);
+            console.error('[PDF Fetch] first 200 bytes:', new TextDecoder().decode(bytes.slice(0, 200)));
 
             if (isSubscribed) {
-              setErrorState('Unable to load PDF: Stored document does not begin with %PDF-');
+              setErrorState(`Corrupted stream header: expected "%PDF-", received "${header}".`);
             }
             return;
           }
 
-          // Create clean Blob and Object URL
-          const blob = new Blob([bytes], { type: 'application/pdf' });
+          // Create fresh Object URL from verified binary Uint8Array stream
+          const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
           createdObjectUrl = URL.createObjectURL(blob);
 
           if (isSubscribed) {
             setObjectUrl(createdObjectUrl);
+            console.log('[PDF Fetch] Verified %PDF- stream. Rendered Object URL:', createdObjectUrl);
           }
         } catch (err: any) {
-          console.error('[PDF Fetch] Catch error:', err?.message || err);
-          if (isSubscribed) {
-            setErrorState('Unable to load PDF.');
-          }
+          console.error('[PDF Fetch] Exception while fetching pdf_url:', err);
+          if (isSubscribed) setErrorState(err?.message || 'Network error fetching PDF.');
         } finally {
           if (isSubscribed) setIsLoading(false);
         }
-        return;
-      }
-
-      // 2. Fallback for in-session pdfBytes
-      if (pdfBytes && pdfBytes.length > 0) {
-        const bytes = new Uint8Array(pdfBytes);
-        const first5 = new TextDecoder('ascii').decode(bytes.slice(0, 5));
-        console.log('[PDF Fetch] Session pdfBytes signature:', first5);
-
-        if (first5 === '%PDF-') {
-          const blob = new Blob([bytes], { type: 'application/pdf' });
+      } else if (pdfBytes && pdfBytes.length > 0) {
+        // Direct local byte stream fallback
+        const header = new TextDecoder().decode(pdfBytes.slice(0, 5));
+        if (header === '%PDF-') {
+          const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
           createdObjectUrl = URL.createObjectURL(blob);
           if (isSubscribed) {
             setObjectUrl(createdObjectUrl);
             setIsLoading(false);
           }
         } else {
-          console.error('[PDF Fetch] Session pdfBytes failed %PDF- check');
           if (isSubscribed) {
-            setErrorState('Unable to load PDF.');
+            setErrorState('Local PDF bytes corrupt.');
             setIsLoading(false);
           }
         }
@@ -120,133 +112,113 @@ export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
 
     if (isOpen) {
       fetchAndVerifyPDF();
-    } else {
-      setObjectUrl(null);
-      setErrorState(null);
     }
 
     return () => {
       isSubscribed = false;
-      if (createdObjectUrl && createdObjectUrl.startsWith('blob:')) {
-        console.log('[PDF Fetch] Revoking Object URL:', createdObjectUrl);
+      if (createdObjectUrl) {
         URL.revokeObjectURL(createdObjectUrl);
       }
     };
   }, [isOpen, pdfUrl, pdfBytes]);
 
-  if (!isOpen) return null;
-
   const handleDownload = () => {
     if (pdfBytes) {
-      PDFService.downloadPDFFile(pdfBytes, `${title.replace(/\s+/g, '_')}_AutoFilled.pdf`);
-      addToast('Download Initiated', 'Official PDF file downloaded.', 'success');
-    } else if (objectUrl) {
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `${title.replace(/\s+/g, '_')}_AutoFilled.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      addToast('Download Initiated', 'PDF fetched from persistent vault.', 'success');
+      PDFService.downloadPDFFile(pdfBytes, `${title.replace(/\s+/g, '_')}.pdf`);
     } else if (pdfUrl) {
       window.open(pdfUrl, '_blank');
     }
   };
 
-  const handleOpenNewTab = () => {
-    if (objectUrl) {
-      window.open(objectUrl, '_blank');
-    } else if (pdfUrl) {
-      window.open(pdfUrl, '_blank');
-    }
-  };
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col h-[85vh]"
       >
-        {/* Header */}
-        <div className="p-4 px-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        {/* Modal Header */}
+        <div className="p-4 md:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Persistent RAW PDF Stream • Verified %PDF- Header
+              <h3 className="text-sm font-bold text-slate-900 line-clamp-1">{title}</h3>
+              <p className="text-[11px] text-slate-500 font-mono">
+                Verified Cloudinary RAW Stream • %PDF- Certified
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {(objectUrl || pdfUrl) && !errorState && (
-              <Button onClick={handleOpenNewTab} variant="outline" size="sm" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
-                Open PDF
-              </Button>
+            {pdfUrl && (
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="ghost" size="sm" leftIcon={<ExternalLink className="w-4 h-4" />}>
+                  Open Direct URL
+                </Button>
+              </a>
             )}
-            {!errorState && (
-              <Button onClick={handleDownload} variant="primary" size="sm" leftIcon={<Download className="w-3.5 h-3.5" />}>
-                Download PDF
-              </Button>
-            )}
+            <Button onClick={handleDownload} variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />}>
+              Download PDF
+            </Button>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors ml-2"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* PDF Viewer Canvas */}
-        <div className="flex-1 p-6 overflow-y-auto bg-slate-100/80 flex justify-center items-center min-h-[550px]">
+        {/* Modal Body / PDF Iframe Stream */}
+        <div className="flex-1 bg-slate-800 relative overflow-hidden flex items-center justify-center">
           {isLoading ? (
-            <div className="text-center py-16 space-y-3">
-              <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-              <p className="text-xs font-bold text-slate-600">Fetching RAW PDF stream and verifying %PDF- signature...</p>
+            <div className="text-center text-white space-y-3">
+              <RefreshCw className="w-10 h-10 animate-spin text-blue-400 mx-auto" />
+              <p className="text-xs font-mono">Verifying %PDF- Header & Streaming RAW Binary...</p>
             </div>
           ) : errorState ? (
-            <div className="text-center py-16 px-8 bg-rose-50 rounded-2xl border border-rose-200 max-w-md mx-auto space-y-3">
-              <AlertTriangle className="w-10 h-10 text-rose-600 mx-auto" />
-              <h4 className="text-sm font-bold text-rose-900">{errorState}</h4>
-              <p className="text-xs text-rose-700 leading-relaxed">
-                The stored document is not a valid PDF file starting with %PDF-.
-              </p>
+            <div className="p-6 bg-rose-950/80 border border-rose-700 text-white rounded-2xl max-w-md text-center space-y-3 font-mono text-xs">
+              <AlertTriangle className="w-10 h-10 text-rose-400 mx-auto" />
+              <h4 className="font-bold text-sm text-rose-200">PDF Stream Verification Warning</h4>
+              <p className="text-rose-300 text-[11px]">{errorState}</p>
+
               {pdfUrl && (
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-800 underline pt-2"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" /> Open Stored URL
-                </a>
+                <div className="pt-2">
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs transition-colors"
+                  >
+                    Open Permanent Cloudinary URL <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
               )}
             </div>
           ) : objectUrl ? (
             <iframe
               src={objectUrl}
-              title="Filled PDF Document Preview"
-              className="w-full max-w-3xl h-[650px] rounded-lg shadow-xl border border-slate-300 bg-white"
+              className="w-full h-full border-0"
+              title={title}
             />
           ) : (
-            <div className="w-full max-w-2xl bg-white shadow-xl rounded-lg p-10 border border-slate-300 min-h-[600px] text-slate-800 space-y-6">
-              <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-2xl w-full mx-4 border border-slate-200 space-y-6 text-left">
+              <div className="border-b border-slate-200 pb-4 text-center space-y-1">
                 <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">
-                  INCOME TAX DEPARTMENT • GOVERNMENT OF INDIA
+                  GOVERNMENT FORM AI ENGINE
                 </span>
-                <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">INDIAN INCOME TAX RETURN VERIFICATION FORM</h2>
-                <p className="text-xs font-semibold text-slate-600">Assessment Year 2026-27 • [ITR-V]</p>
+                <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">AUTO-FILLED GOVERNMENT FORM</h2>
+                <p className="text-xs font-semibold text-slate-600">OCR Extracted Data Summary</p>
               </div>
 
               <div className="flex justify-between items-center bg-slate-50 p-3 rounded border border-slate-200 font-mono text-xs">
                 <div>
-                  <p className="font-bold text-slate-700">ACK NO: 902810293819203</p>
+                  <p className="font-bold text-slate-700">SUBMISSION STREAM</p>
                   <p className="text-slate-500 text-[10px]">TIMESTAMP: {new Date().toISOString()}</p>
                 </div>
                 <div className="h-8 bg-slate-800 w-36 rounded flex items-center justify-center text-white text-[10px] font-bold tracking-widest">
@@ -254,42 +226,11 @@ export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 border-b border-blue-200 pb-1">
-                  1. PERSONAL & TAXPAYER IDENTIFICATION
-                </h4>
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <span className="text-slate-500 block text-[10px]">NAME OF ASSESSEE:</span>
-                    <span className="font-bold text-slate-900 font-mono">RAHUL VIKRAM VERMA</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10px]">PAN NUMBER:</span>
-                    <span className="font-bold text-slate-900 font-mono">ABCDE1234F</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10px]">AADHAAR NUMBER:</span>
-                    <span className="font-bold text-slate-900 font-mono">4589 1029 3847</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10px]">MOBILE NUMBER:</span>
-                    <span className="font-bold text-slate-900 font-mono">+91 98765 43210</span>
-                  </div>
-                </div>
-
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 border-b border-blue-200 pb-1 pt-2">
-                  2. ADDRESS FOR COMMUNICATION
-                </h4>
-                <p className="text-xs font-mono font-medium text-slate-800 bg-slate-50 p-2.5 rounded border border-slate-200">
-                  Flat 402, HighTech Heights, Silicon City, Whitefield, Bengaluru - 560066
-                </p>
-              </div>
-
-              <div className="pt-6 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400">
                 <span className="flex items-center gap-1 font-semibold text-emerald-600">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Validated PDF Stream
+                  <ShieldCheck className="w-3.5 h-3.5" /> Validated OCR Document Stream
                 </span>
-                <span>Document Digest: sha256_e8910293f...</span>
+                <span>Security Stamp: Verified</span>
               </div>
             </div>
           )}

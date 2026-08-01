@@ -81,16 +81,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           completionScore: data.completion_score || 0,
         });
       } else {
-        // Fallback default profile creation
+        // Clean default profile creation without hardcoded demo data
         const defaultProfile: UserProfile = {
-          fullName: userObj?.user_metadata?.name || 'Rahul Vikram Verma',
-          dob: '14/08/1992',
-          address: 'Flat 402, HighTech Heights, Whitefield, Bengaluru - 560066',
-          phone: '+91 98765 43210',
-          panNumber: 'ABCDE1234F',
-          passportNumber: 'Z9876543',
-          aadhaarNumber: '4589 1029 3847',
-          completionScore: 85,
+          fullName: userObj?.user_metadata?.name || '',
+          dob: '',
+          address: '',
+          phone: '',
+          panNumber: '',
+          passportNumber: '',
+          aadhaarNumber: '',
+          completionScore: 0,
         };
         setProfile(defaultProfile);
       }
@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.from('master_profile').upsert({
         id: data.user.id,
         full_name: name,
-        completion_score: 15,
+        completion_score: 0,
         updated_at: new Date().toISOString(),
       });
     }
