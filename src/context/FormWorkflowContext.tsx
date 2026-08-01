@@ -2,17 +2,15 @@
 // FORM WORKFLOW CONTEXT
 // Manages wizard state: step, files, extracted fields.
 // All fields start EMPTY — no hardcoded demo values.
-// Supabase writes are delegated to SubmissionService.
+// Directly connects OCR output to Review UI with multi-doc merging rules.
 // ============================================================
 
 import React, { createContext, useContext, useState } from 'react';
 import { UploadedFile, ExtractedField, FormSubmission } from '../types';
-import { supabase } from '../lib/supabase';
 import { OCRService } from '../services/ocrService';
 import { CanonicalKey, validateField } from '../services/ocrService';
 import { CanonicalMappingEngine } from '../services/canonicalMappingEngine';
 import { useAuth } from './AuthContext';
-import { upsertSubmission, upsertForm, updateMergedFields, createDraftSubmission } from '../services/submissionService';
 
 // ── Context Type ───────────────────────────────────────────
 
@@ -51,7 +49,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [activeSubmissionId, setActiveSubmissionId] = useState<string>(() => crypto.randomUUID());
   const [formFile,          setFormFile]          = useState<UploadedFile | null>(null);
   const [supportingFiles,   setSupportingFiles]   = useState<UploadedFile[]>([]);
-  // Fields start EMPTY — populated only by real OCR extraction
+  // Fields start EMPTY — populated only by real Gemini OCR extraction
   const [extractedFields,   setExtractedFields]   = useState<ExtractedField[]>([]);
   const [submissions,       setSubmissions]       = useState<FormSubmission[]>([]);
 
@@ -87,15 +85,12 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
   };
 
-  // ── Merge Logic ───────────────────────────────────────────
-  // When new OCR results arrive from a supporting document:
-  // 1. Map raw OCR keys → canonical keys
-  // 2. Validate values
-  // 3. Merge into existing fields
-  //    - Never overwrite a good (high-confidence, filled) value with empty
-  //    - Prefer higher confidence
-  //    - Prefer newer extraction when confidence is equal
-  // 4. Persist to Supabase via SubmissionService
+  // ── Multi-Document Merge Engine ───────────────────────────
+  // Rules:
+  // 1. Never overwrite manually edited values (isEdited === true).
+  // 2. Never replace a populated value with null/empty.
+  // 3. Always keep the highest confidence value.
+  // 4. Update Review UI state immediately.
 
   const mergeExtractedFieldsMap = async (
     newFieldsMap: Record<string, string>,
@@ -106,24 +101,22 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     let updatedCount = 0;
     let successfulNormalizationsCount = 0;
 
-    // Filter out null/empty values from OCR response
-    const validOcrEntries = Object.entries(newFieldsMap).filter(
-      ([, val]) => val !== null && val !== undefined && typeof val === 'string' && val.trim() !== '' && val !== 'null'
-    );
-
     const updatedList: ExtractedField[] = [...extractedFields];
 
-    // If we don't have fields yet (first extraction), build the full list from OCR schema
-    const isFirstExtraction = updatedList.length === 0;
-    if (isFirstExtraction) {
+    // Build initial empty 26-field canonical structure if this is the first extraction
+    if (updatedList.length === 0) {
       const emptyResult = OCRService.buildEmptyResult();
       updatedList.push(...emptyResult.fields);
     }
 
-    validOcrEntries.forEach(([rawOcrKey, ocrValue]) => {
-      const rawVal = ocrValue.trim();
-      const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
+    // Process canonical entries from OCR JSON
+    Object.entries(newFieldsMap).forEach(([rawOcrKey, ocrValue]) => {
+      if (ocrValue === null || ocrValue === undefined || typeof ocrValue !== 'string') return;
 
+      const rawVal = ocrValue.trim();
+      if (!rawVal || rawVal.toLowerCase() === 'null') return; // Skip empty/null values — NEVER replace populated value with null
+
+      const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
       if (!mappingRes.canonicalKey) return;
 
       successfulNormalizationsCount++;
@@ -132,24 +125,24 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (targetIndex === -1) return;
 
       const existingField = updatedList[targetIndex];
+
+      // Rule: Never overwrite manually edited fields
+      if (existingField.isEdited) {
+        return;
+      }
+
       const { value: validatedVal, confidence: newConfidence } = validateField(
         mappingRes.canonicalKey as CanonicalKey,
         rawVal
       );
 
-      if (!validatedVal) return; // Skip empty validated values
+      if (!validatedVal || !validatedVal.trim()) return;
 
-      // Merge rule:
-      // - If current field is empty → always take new value
-      // - If new value has higher confidence → prefer new
-      // - If confidence is equal → prefer new (newer extraction wins)
-      // - Never overwrite a filled field with empty
-      const shouldUpdate =
-        !existingField.value ||
-        newConfidence > (existingField.confidence || 0) ||
-        (newConfidence === existingField.confidence && !existingField.isEdited);
+      const isCurrentEmpty = !existingField.value || existingField.value.trim() === '';
+      const isNewHigherConfidence = newConfidence > (existingField.confidence || 0);
 
-      if (shouldUpdate) {
+      // Merge Rule: Update if current field is empty OR new extraction has higher confidence
+      if (isCurrentEmpty || isNewHigherConfidence) {
         updatedCount++;
         updatedList[targetIndex] = {
           ...existingField,
@@ -157,24 +150,12 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
           confidence:      newConfidence,
           isMissing:       false,
           isLowConfidence: newConfidence < 85,
-          isEdited:        true,
         };
       }
     });
 
+    // Update Review UI state immediately
     setExtractedFields(updatedList);
-
-    // Persist merged state to Supabase
-    try {
-      await updateMergedFields({
-        submissionId: activeSubmissionId,
-        userId: user?.id,
-        updatedFields: updatedList,
-        rawOcrText: rawOcrText || JSON.stringify(newFieldsMap),
-      });
-    } catch (e) {
-      console.warn('[FormWorkflow] Supabase merge persistence failed:', e);
-    }
 
     return { mergedFields: updatedList, updatedCount, successfulNormalizationsCount };
   };
@@ -190,8 +171,6 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const resetWorkflow = () => {
     startNewSubmission();
   };
-
-  // ── Provider ──────────────────────────────────────────────
 
   return (
     <FormWorkflowContext.Provider
