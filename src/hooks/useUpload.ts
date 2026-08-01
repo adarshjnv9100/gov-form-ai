@@ -50,6 +50,8 @@ export function useUpload() {
     setError(null);
     setLastFile(file);
 
+    console.log('Uploaded File', file);
+
     const valError = validateFile(file);
     if (valError) {
       setError(valError);
@@ -65,6 +67,8 @@ export function useUpload() {
       const res: CloudinaryUploadResult = await CloudinaryService.uploadFile(file, (p) => {
         setProgress(p);
       });
+
+      console.log('Cloudinary URL', res.secure_url);
 
       const finalDocType = customType || res.documentType || determineDocumentType(file.name);
       const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -99,44 +103,28 @@ export function useUpload() {
           name: file.name,
           type: finalDocType,
           url: res.secure_url,
+          created_at: timestamp,
         });
       }
 
       setUploadedDoc(docRecord);
-      addToast('Upload Successful', `${file.name} uploaded and tagged with submission ID.`, 'success');
       return docRecord;
     } catch (err: any) {
-      const errMsg = err?.message || 'Cloudinary upload failed due to network failure.';
+      const errMsg = err?.message || 'Failed to upload document to Cloudinary.';
       setError(errMsg);
-      addToast('Upload Failed', errMsg, 'error');
+      addToast('Upload Error', errMsg, 'error');
       return null;
     } finally {
       setIsUploading(false);
     }
   };
 
-  const retry = async (): Promise<UploadedDocumentRecord | null> => {
-    if (lastFile) {
-      return uploadFile(lastFile);
-    }
-    return null;
-  };
-
-  const reset = () => {
-    setIsUploading(false);
-    setProgress(0);
-    setError(null);
-    setUploadedDoc(null);
-    setLastFile(null);
-  };
-
   return {
+    uploadFile,
     isUploading,
     progress,
     error,
     uploadedDoc,
-    uploadFile,
-    retry,
-    reset,
+    lastFile,
   };
 }

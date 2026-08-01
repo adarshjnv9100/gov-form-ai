@@ -417,6 +417,21 @@ Return ONLY valid JSON matching this schema:
 
 If a field is not present in the document, set value as empty string "". Never invent or use fake values.`;
 
+    const requestBody = {
+      model: 'moonshotai/kimi-k2.6-vision',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Perform OCR extraction for uploaded document URL: ${documentUrl}`,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 1024,
+    };
+
+    console.log('Sending to OCR', requestBody);
+
     try {
       const response = await fetch(nvidiaEndpoint, {
         method: 'POST',
@@ -424,25 +439,31 @@ If a field is not present in the document, set value as empty string "". Never i
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: 'moonshotai/kimi-k2.6-vision',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: `Perform OCR extraction for uploaded document URL: ${documentUrl}`,
-            },
-          ],
-          temperature: 0.1,
-          max_tokens: 1024,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
         const data = await response.json();
+        console.log('OCR Raw Response', data);
+
         const rawContent = data.choices?.[0]?.message?.content || '';
         const cleanedJsonText = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanedJsonText);
+
+        let parsed: Record<string, any> = {};
+        try {
+          parsed = JSON.parse(cleanedJsonText);
+          console.log('Parsed JSON', parsed);
+        } catch (parseError) {
+          console.error('Parser Error:', parseError);
+        }
+
+        const keysWithValue = Object.keys(parsed).filter(
+          (k) => parsed[k] !== '' && parsed[k] !== null && parsed[k] !== undefined
+        );
+        if (keysWithValue.length === 0) {
+          console.log('OCR returned no fields.');
+        }
+
         return this.processSemanticOutput(parsed);
       }
     } catch (e) {
@@ -454,6 +475,11 @@ If a field is not present in the document, set value as empty string "". Never i
 
   private static processSemanticOutput(parsed: Record<string, any>): KimiExtractionResult {
     const normalized = normalizeOCRFields(parsed);
+    console.log('Mapped Fields', normalized);
+
+    if (Object.keys(normalized).length === 0) {
+      console.log('Mapping failed.');
+    }
 
     const rawSchema: KimiStructuredSchema = {
       full_name: normalized.full_name || '',

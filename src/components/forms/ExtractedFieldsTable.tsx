@@ -27,6 +27,8 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   onSaveField,
   onConfirmAll,
 }) => {
+  console.log('Review Data', fields);
+
   const { addToast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -53,216 +55,278 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   const handleSaveEdit = (id: string) => {
     onSaveField(id, editValue);
     setEditingId(null);
-    addToast('Field Updated', 'Extracted value updated.', 'success');
+    addToast('Field Updated', 'Field value saved to submission state.', 'success');
   };
 
-  const handleValidateAndGenerate = () => {
-    const uncompleted = fields.filter((f) => !f.value || f.value.trim() === '');
+  const toggleSection = (section: 'auto' | 'review' | 'missing') => {
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
 
-    if (uncompleted.length > 0) {
+  const handleValidationBeforeGenerate = () => {
+    if (missingFields.length > 0) {
       addToast(
-        'Required Fields Missing',
+        'Incomplete Form',
         'Please complete all required fields before generating the PDF.',
-        'error'
+        'warning'
       );
       setOpenSections({ auto: true, review: true, missing: true });
       return;
     }
-
     onConfirmAll();
-  };
-
-  const renderFieldRow = (field: ExtractedField, state: 'AUTO' | 'REVIEW' | 'MISSING') => {
-    const isEditing = editingId === field.id;
-
-    return (
-      <motion.div
-        key={field.id}
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`p-4 rounded-2xl border transition-all ${
-          state === 'MISSING'
-            ? 'bg-rose-50/60 border-rose-300 ring-1 ring-rose-400/50'
-            : state === 'REVIEW'
-            ? 'bg-amber-50/60 border-amber-300'
-            : 'bg-slate-50/80 border-slate-200 hover:border-slate-300'
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Label & Status Badge */}
-          <div className="space-y-1 max-w-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-800">{field.label}</span>
-              {state === 'MISSING' && (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-600 text-white uppercase tracking-wider">
-                  Required
-                </span>
-              )}
-              {state === 'REVIEW' && (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500 text-white uppercase tracking-wider">
-                  Needs Review
-                </span>
-              )}
-              {state === 'AUTO' && (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  {field.confidence}% Confidence
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 font-mono">Field Key: {field.key}</p>
-          </div>
-
-          {/* Value Box / Editable Input */}
-          <div className="flex items-center gap-3 flex-1 sm:justify-end">
-            {isEditing || state === 'MISSING' ? (
-              <div className="flex items-center gap-2 w-full sm:max-w-md">
-                <input
-                  type="text"
-                  value={isEditing ? editValue : field.value}
-                  onChange={(e) => {
-                    if (isEditing) setEditValue(e.target.value);
-                    else onSaveField(field.id, e.target.value);
-                  }}
-                  placeholder={`Enter ${field.label}...`}
-                  className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-mono font-semibold focus:outline-none focus:ring-2 ${
-                    state === 'MISSING'
-                      ? 'border-rose-400 focus:ring-rose-500 text-rose-900 placeholder:text-rose-400'
-                      : 'border-slate-300 focus:ring-blue-500 text-slate-900'
-                  }`}
-                />
-                {isEditing && (
-                  <Button onClick={() => handleSaveEdit(field.id)} size="sm" variant="primary">
-                    <Save className="w-3.5 h-3.5" />
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-slate-900 bg-white px-3 py-2 rounded-xl border border-slate-200 min-w-[180px] text-right truncate">
-                  {field.value}
-                </span>
-                <button
-                  onClick={() => handleStartEdit(field)}
-                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-slate-200 rounded-lg transition-colors"
-                  title="Edit Field"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.div>
-    );
   };
 
   return (
     <div className="space-y-6">
-      {/* 10. Completion Indicator Banner */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-slate-800 shadow-md">
+      {/* Visual Header Summary Banner */}
+      <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-950 text-white rounded-3xl shadow-sm border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-teal-400" />
-            <h3 className="text-base font-extrabold">Form Auto-Fill Readiness Matrix</h3>
+            <h3 className="text-sm font-extrabold uppercase tracking-wide">OCR Field Verification Overview</h3>
           </div>
-          <p className="text-xs text-slate-300 font-mono">
-            {autoCount} / {totalCount} fields auto-filled • {manualInputCount} fields require manual input
+          <p className="text-xs text-slate-300">
+            Auto-filled: <span className="font-bold text-emerald-400">{autoCount}</span> • Needs Review: <span className="font-bold text-amber-400">{needsReviewFields.length}</span> • Missing: <span className="font-bold text-rose-400">{missingFields.length}</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-bold font-mono">
-          <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30">
-            🟢 {autoCount} Auto
-          </span>
-          <span className="px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/30">
-            🟡 {needsReviewFields.length} Review
-          </span>
-          <span className="px-3 py-1 bg-rose-500/20 text-rose-300 rounded-full border border-rose-500/30">
-            🔴 {missingFields.length} Missing
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden sm:block">
+            <span className="text-[10px] text-slate-400 block font-mono">Completion Score</span>
+            <span className="text-lg font-black text-teal-300 font-mono">
+              {Math.round(((totalCount - missingFields.length) / totalCount) * 100)}%
+            </span>
+          </div>
+
+          <Button
+            onClick={handleValidationBeforeGenerate}
+            disabled={missingFields.length > 0}
+            variant={missingFields.length === 0 ? 'teal' : 'outline'}
+            leftIcon={<FileCheck className="w-4 h-4" />}
+          >
+            Generate Filled PDF
+          </Button>
         </div>
       </div>
 
-      {/* 11. Visually Grouped Sections */}
-      <div className="space-y-4">
-        {/* Section 1: 🔴 Manual Entry Required (Missing Fields) */}
-        {missingFields.length > 0 && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setOpenSections((prev) => ({ ...prev, missing: !prev.missing }))}
-              className="w-full flex items-center justify-between p-3 bg-rose-100/80 rounded-xl border border-rose-300 text-rose-900 text-xs font-extrabold uppercase tracking-wider hover:bg-rose-100"
-            >
-              <span className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600" /> ✎ Manual Entry Required ({missingFields.length})
-              </span>
-              {openSections.missing ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
-
-            {openSections.missing && (
-              <div className="space-y-2 pl-2 border-l-2 border-rose-300">
-                {missingFields.map((field) => renderFieldRow(field, 'MISSING'))}
-              </div>
-            )}
+      {/* Validation Warning Alert if Empty Fields Exist */}
+      {missingFields.length > 0 && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <span>
+              <strong className="font-bold">Attention Required:</strong> {missingFields.length} field(s) are missing values. Complete missing fields below or use AI recommendations to proceed with PDF generation.
+            </span>
           </div>
-        )}
-
-        {/* Section 2: 🟡 Needs Review (Low Confidence Fields) */}
-        {needsReviewFields.length > 0 && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setOpenSections((prev) => ({ ...prev, review: !prev.review }))}
-              className="w-full flex items-center justify-between p-3 bg-amber-100/80 rounded-xl border border-amber-300 text-amber-900 text-xs font-extrabold uppercase tracking-wider hover:bg-amber-100"
-            >
-              <span className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600" /> ⚠ Needs Review ({needsReviewFields.length})
-              </span>
-              {openSections.review ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
-
-            {openSections.review && (
-              <div className="space-y-2 pl-2 border-l-2 border-amber-300">
-                {needsReviewFields.map((field) => renderFieldRow(field, 'REVIEW'))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Section 3: 🟢 Auto-filled (High Confidence Fields) */}
-        {autoFilledFields.length > 0 && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setOpenSections((prev) => ({ ...prev, auto: !prev.auto }))}
-              className="w-full flex items-center justify-between p-3 bg-emerald-100/80 rounded-xl border border-emerald-300 text-emerald-900 text-xs font-extrabold uppercase tracking-wider hover:bg-emerald-100"
-            >
-              <span className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> ✓ Auto-filled ({autoFilledFields.length})
-              </span>
-              {openSections.auto ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
-
-            {openSections.auto && (
-              <div className="space-y-2 pl-2 border-l-2 border-emerald-300">
-                {autoFilledFields.map((field) => renderFieldRow(field, 'AUTO'))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Action Footer */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200">
-        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-          <Info className="w-4 h-4 text-blue-600" /> All 18 required fields will be compiled into the official government PDF form.
         </div>
+      )}
 
-        <Button
-          onClick={handleValidateAndGenerate}
-          variant="teal"
-          size="lg"
-          rightIcon={<FileCheck className="w-5 h-5" />}
+      {/* SECTION 1: 🟢 AUTO-FILLED FIELDS */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <button
+          onClick={() => toggleSection('auto')}
+          className="w-full px-5 py-3.5 bg-emerald-50/60 border-b border-emerald-100 flex items-center justify-between text-left hover:bg-emerald-50 transition-colors"
         >
-          Confirm & Generate PDF
-        </Button>
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <div>
+              <h4 className="text-xs font-extrabold text-emerald-900 uppercase tracking-wide">
+                🟢 Auto-filled Fields ({autoFilledFields.length})
+              </h4>
+              <p className="text-[11px] text-emerald-700 font-medium">Extracted with high confidence (≥ 85%)</p>
+            </div>
+          </div>
+          {openSections.auto ? <ChevronDown className="w-4 h-4 text-emerald-700" /> : <ChevronRight className="w-4 h-4 text-emerald-700" />}
+        </button>
+
+        <AnimatePresence>
+          {openSections.auto && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              {autoFilledFields.length === 0 ? (
+                <p className="p-4 text-xs text-slate-400 text-center italic">No high-confidence fields extracted yet.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {autoFilledFields.map((field) => (
+                    <div key={field.id} className="p-4 hover:bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="space-y-0.5 max-w-sm">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          {field.label}
+                          <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            {field.confidence}% Confidence
+                          </span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
+                      </div>
+
+                      {editingId === field.id ? (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="px-3 py-1.5 bg-white border border-blue-400 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                          />
+                          <Button size="sm" onClick={() => handleSaveEdit(field.id)} leftIcon={<Save className="w-3.5 h-3.5" />}>
+                            Save
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-semibold text-slate-900 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
+                            {field.value}
+                          </span>
+                          <button onClick={() => handleStartEdit(field)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* SECTION 2: 🟡 NEEDS REVIEW FIELDS */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <button
+          onClick={() => toggleSection('review')}
+          className="w-full px-5 py-3.5 bg-amber-50/60 border-b border-amber-100 flex items-center justify-between text-left hover:bg-amber-50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <div>
+              <h4 className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">
+                🟡 Needs Review Fields ({needsReviewFields.length})
+              </h4>
+              <p className="text-[11px] text-amber-700 font-medium">Value exists but confidence is low (&lt; 85%)</p>
+            </div>
+          </div>
+          {openSections.review ? <ChevronDown className="w-4 h-4 text-amber-700" /> : <ChevronRight className="w-4 h-4 text-amber-700" />}
+        </button>
+
+        <AnimatePresence>
+          {openSections.review && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              {needsReviewFields.length === 0 ? (
+                <p className="p-4 text-xs text-slate-400 text-center italic">No low-confidence fields require review.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {needsReviewFields.map((field) => (
+                    <div key={field.id} className="p-4 hover:bg-amber-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-amber-50/10">
+                      <div className="space-y-0.5 max-w-sm">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          {field.label}
+                          <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            {field.confidence}% Needs Review
+                          </span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
+                      </div>
+
+                      {editingId === field.id ? (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="px-3 py-1.5 bg-white border border-amber-400 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 w-full sm:w-64"
+                          />
+                          <Button size="sm" onClick={() => handleSaveEdit(field.id)} leftIcon={<Save className="w-3.5 h-3.5" />}>
+                            Save
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg">
+                            {field.value}
+                          </span>
+                          <button onClick={() => handleStartEdit(field)} className="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg hover:bg-amber-100 transition-colors">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* SECTION 3: 🔴 MISSING / MANUAL ENTRY REQUIRED FIELDS */}
+      <div className="bg-white rounded-2xl border border-rose-200 shadow-xs overflow-hidden">
+        <button
+          onClick={() => toggleSection('missing')}
+          className="w-full px-5 py-3.5 bg-rose-50/80 border-b border-rose-200 flex items-center justify-between text-left hover:bg-rose-50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600" />
+            <div>
+              <h4 className="text-xs font-extrabold text-rose-900 uppercase tracking-wide flex items-center gap-2">
+                🔴 Missing / Manual Entry Required ({missingFields.length})
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-200 text-rose-900 font-bold">
+                  Required
+                </span>
+              </h4>
+              <p className="text-[11px] text-rose-700 font-medium">No value extracted from uploaded documents. Please complete input or upload recommended proof.</p>
+            </div>
+          </div>
+          {openSections.missing ? <ChevronDown className="w-4 h-4 text-rose-700" /> : <ChevronRight className="w-4 h-4 text-rose-700" />}
+        </button>
+
+        <AnimatePresence>
+          {openSections.missing && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              {missingFields.length === 0 ? (
+                <p className="p-4 text-xs text-emerald-600 font-bold text-center bg-emerald-50">
+                  🎉 All required fields have been successfully completed!
+                </p>
+              ) : (
+                <div className="divide-y divide-rose-100">
+                  {missingFields.map((field) => (
+                    <div key={field.id} className="p-4 bg-rose-50/20 hover:bg-rose-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="space-y-0.5 max-w-sm">
+                        <span className="font-bold text-slate-800 flex items-center gap-2">
+                          {field.label}
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-rose-600 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md">
+                            Required
+                          </span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="text"
+                          value={editingId === field.id ? editValue : field.value}
+                          onChange={(e) => {
+                            setEditingId(field.id);
+                            setEditValue(e.target.value);
+                          }}
+                          onBlur={() => {
+                            if (editingId === field.id && editValue.trim() !== '') {
+                              handleSaveEdit(field.id);
+                            }
+                          }}
+                          placeholder={`Enter ${field.label}...`}
+                          className="px-3 py-2 bg-white border-2 border-rose-300 focus:border-blue-500 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-full sm:w-72 shadow-xs"
+                        />
+                        {editingId === field.id && editValue.trim() !== '' && (
+                          <Button size="sm" onClick={() => handleSaveEdit(field.id)} leftIcon={<Save className="w-3.5 h-3.5" />}>
+                            Save
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
