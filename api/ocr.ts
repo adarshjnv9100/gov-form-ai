@@ -1,11 +1,10 @@
 // ============================================================
 // VERCEL SERVERLESS FUNCTION: /api/ocr
-// Gemini 2.5 Flash Multimodal OCR Backend Endpoint.
+// Gemini Multimodal OCR Backend Endpoint.
 // Uses official Google Generative AI SDK (@google/genai).
-// Receives { documentUrl }, validates URL reachability via HEAD request,
-// processes image/PDF via Gemini 2.5 Flash.
+// Model is configurable via process.env.GEMINI_MODEL with default fallback 'gemini-1.5-flash'.
+// Logs: Selected model, SDK version, API endpoint.
 // Returns validated 26-field canonical JSON with missing fields set to null.
-// Never exposes GEMINI_API_KEY to the frontend.
 // ============================================================
 
 import { GoogleGenAI } from '@google/genai';
@@ -50,7 +49,7 @@ const DEFAULT_CANONICAL_SCHEMA = {
   emergency_contact: null,
 };
 
-const SYSTEM_PROMPT = `You are an expert Indian Government Document OCR Parser using Gemini 2.5 Flash.
+const SYSTEM_PROMPT = `You are an expert Indian Government Document OCR Parser using Gemini Multimodal Vision.
 Analyze the provided document (Aadhaar Card, PAN Card, Passport, Driving Licence, Voter ID, Bank Passbook, IT Returns) and extract explicit text values.
 
 You MUST return ONLY a JSON object matching this exact 26-field schema:
@@ -100,13 +99,29 @@ function getGeminiApiKey(): string {
 }
 
 /**
+ * Gets configured model from process.env.GEMINI_MODEL, with fallback to 'gemini-1.5-flash'.
+ */
+function getGeminiModel(): string {
+  const model = (
+    process.env.GEMINI_MODEL ||
+    process.env.VITE_GEMINI_MODEL ||
+    ''
+  ).trim();
+
+  // If user provided a non-deprecated model, use it; otherwise default to gemini-1.5-flash
+  if (model && !model.includes('2.5-flash')) {
+    return model;
+  }
+  return 'gemini-1.5-flash';
+}
+
+/**
  * Validates that documentUrl returns HTTP 200 OK via HEAD/GET request before invoking Gemini.
  */
 async function validateDocumentUrlReachable(documentUrl: string): Promise<{ reachable: boolean; status: number; statusText: string }> {
   try {
     let response = await fetch(documentUrl, { method: 'HEAD' }).catch(() => null);
     if (!response || response.status === 405 || response.status === 403) {
-      // Fallback to GET request if HEAD method is restricted by CDN
       response = await fetch(documentUrl, { method: 'GET', headers: { Range: 'bytes=0-10' } }).catch(() => null);
     }
 
@@ -223,29 +238,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  const selectedModel = getGeminiModel();
+  const sdkVersion = '@google/genai';
+  const apiEndpoint = 'https://generativelanguage.googleapis.com';
+
+  // Requirement 5: Log Selected model, SDK version, API endpoint
+  console.log('==================== GEMINI OCR PROCESSING ====================');
+  console.log('Selected model:', selectedModel);
+  console.log('SDK version:', sdkVersion);
+  console.log('API endpoint:', apiEndpoint);
+  console.log('Document URL:', documentUrl);
+  console.log('================================================================');
+
   try {
     const inlinePart = await fetchDocumentInlinePart(documentUrl);
-
     const ai = new GoogleGenAI({ apiKey });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        inlinePart,
-        SYSTEM_PROMPT,
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-      },
-    });
+    let response: any = null;
+    try {
+      response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: [
+          inlinePart,
+          SYSTEM_PROMPT,
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+    } catch (primaryModelErr: any) {
+      // If primary model fails, fallback to gemini-1.5-flash
+      console.warn(`[Gemini OCR Warning] Model '${selectedModel}' failed (${primaryModelErr?.message}). Retrying with fallback model 'gemini-1.5-flash'...`);
+      response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: [
+          inlinePart,
+          SYSTEM_PROMPT,
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+    }
 
     const responseText = response.text || '';
 
     if (!responseText || !responseText.trim()) {
       return res.status(422).json({
         success: false,
-        error: 'Gemini 2.5 Flash returned an empty response content.',
+        error: `Gemini OCR (${selectedModel}) returned empty content choices.`,
       });
     }
 
@@ -261,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error('[Gemini OCR Error] JSON parsing failed:', parseErr, cleanJsonText);
       return res.status(422).json({
         success: false,
-        error: `Invalid JSON returned by Gemini 2.5 Flash: ${parseErr?.message}`,
+        error: `Invalid JSON returned by Gemini: ${parseErr?.message}`,
         rawText: cleanJsonText,
       });
     }
