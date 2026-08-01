@@ -12,5 +12,21 @@ export default defineConfig({
   server: {
     port: 3000,
     open: false,
+    proxy: {
+      // Dev proxy: routes /api/* to local handler equivalents.
+      // In production, Vercel serves these from the /api directory directly.
+      // During local dev, we proxy OCR and Nemotron requests through the
+      // NVIDIA endpoint using the NVIDIA_API_KEY from .env.local (no VITE_ prefix).
+      '/api/ocr': {
+        target: 'http://localhost:3000',
+        rewrite: () => '/api/ocr',
+        // Handled by Vercel dev CLI; in pure vite dev, requests will 404
+        // unless running `vercel dev`. See README for setup instructions.
+      },
+      '/api/nemotron': {
+        target: 'http://localhost:3000',
+        rewrite: () => '/api/nemotron',
+      },
+    },
   },
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Bot, Sparkles, UploadCloud, CheckCircle2, FileSpreadsheet } from 'lucide-react';
-import { RecommendedDocumentItem, NemotronRecommendationResponse } from '../../services/nemotron';
+import { RecommendedDocumentItem, NemotronRecommendationResponse } from '../../services/nemotronService';
 import { Button } from '../ui/Button';
 
 interface AIAssistantPanelProps {

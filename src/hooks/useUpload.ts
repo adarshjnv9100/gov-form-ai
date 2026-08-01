@@ -50,8 +50,6 @@ export function useUpload() {
     setError(null);
     setLastFile(file);
 
-    console.log('Uploaded File', file);
-
     const valError = validateFile(file);
     if (valError) {
       setError(valError);
@@ -67,8 +65,6 @@ export function useUpload() {
       const res: CloudinaryUploadResult = await CloudinaryService.uploadFile(file, (p) => {
         setProgress(p);
       });
-
-      console.log('Cloudinary URL', res.secure_url);
 
       const finalDocType = customType || res.documentType || determineDocumentType(file.name);
       const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

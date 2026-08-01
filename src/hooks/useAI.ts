@@ -1,105 +1,89 @@
+// ============================================================
+// useAI HOOK
+// Manages OCR processing state for a single document.
+// Calls OCRService (which proxies to /api/ocr).
+// On error: preserves previous extracted data — never clears fields.
+// Delegates Supabase persistence to SubmissionService.
+// ============================================================
+
 import { useState } from 'react';
-import { KimiService, KimiStructuredSchema, ExtractedFieldDetail } from '../services/kimiService';
-import { supabase } from '../lib/supabase';
+import { OCRService, OCRExtractionResult, CanonicalSchema } from '../services/ocrService';
+import { insertExtractedData } from '../services/submissionService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export function useAI() {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [extractedData, setExtractedData] = useState<KimiStructuredSchema | null>(null);
-  const [extractedFieldsList, setExtractedFieldsList] = useState<ExtractedFieldDetail[]>([]);
-  const [lastDocInfo, setLastDocInfo] = useState<{ docId: string; url: string; submissionId?: string } | null>(null);
+  const [isProcessing, setIsProcessing]   = useState(false);
+  const [progress,     setProgress]       = useState(0);
+  const [error,        setError]          = useState<string | null>(null);
+  const [lastDocInfo,  setLastDocInfo]    = useState<{ docId: string; url: string; submissionId?: string } | null>(null);
 
-  const { user, updateProfile } = useAuth();
-  const { addToast } = useToast();
+  const { user }      = useAuth();
+  const { addToast }  = useToast();
 
+  /**
+   * Processes a single document via OCR.
+   * Returns the extraction result or null on failure.
+   * On failure: keeps previous fields intact (caller is responsible for not clearing).
+   */
   const processDocument = async (
     docId: string,
     documentUrl: string,
     submissionId?: string
-  ): Promise<{ structured: KimiStructuredSchema; fields: ExtractedFieldDetail[]; rawOcrText?: string } | null> => {
+  ): Promise<OCRExtractionResult | null> => {
     setIsProcessing(true);
     setProgress(15);
     setError(null);
     setLastDocInfo({ docId, url: documentUrl, submissionId });
 
     try {
-      const interval = setInterval(() => {
-        setProgress((prev) => (prev < 90 ? prev + 25 : prev));
-      }, 400);
+      // Simulate progress while waiting for OCR response
+      const progressInterval = setInterval(() => {
+        setProgress((prev) => (prev < 85 ? prev + 20 : prev));
+      }, 500);
 
-      const result = await KimiService.extractDocumentJSON(documentUrl);
-      clearInterval(interval);
+      const result = await OCRService.extractDocumentJSON(documentUrl);
+      clearInterval(progressInterval);
       setProgress(100);
 
-      setExtractedData(result.structured);
-      setExtractedFieldsList(result.fields);
-
-      // Store in Supabase `extracted_data` table linked to submission_id
-      if (user?.id) {
-        const extractionRecordId = `ext_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        await supabase.from('extracted_data').insert({
-          id: extractionRecordId,
-          submission_id: submissionId || null,
-          user_id: user.id,
-          document_id: docId || 'doc_current',
-          json_data: result.structured,
-          created_at: new Date().toISOString(),
-        });
+      // Store extraction record in Supabase (non-critical — failure does not block)
+      if (user?.id && submissionId) {
+        await insertExtractedData({
+          submissionId,
+          userId:      user.id,
+          documentId:  docId,
+          jsonData:    result.structured as unknown as Record<string, string>,
+        }).catch((e) => console.warn('[useAI] insertExtractedData failed (non-critical):', e));
       }
 
-      addToast('AI Semantic Extraction Complete', 'Validated canonical fields bound to submission.', 'success');
-      return {
-        structured: result.structured,
-        fields: result.fields,
-        rawOcrText: result.rawOcrText,
-      };
+      addToast('Extraction Complete', 'Document analyzed and fields extracted.', 'success');
+      return result;
     } catch (err: any) {
-      const errMsg = err?.message || 'Kimi K2.6 Vision processing failed.';
+      const errMsg = err?.message || 'OCR extraction failed. Please retry.';
       setError(errMsg);
-      addToast('AI Extraction Failed', errMsg, 'error');
+      addToast('Extraction Failed', errMsg, 'error');
+      // Return null — caller preserves existing extracted data
       return null;
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const retryProcessing = async () => {
+  /**
+   * Retries the last document that was processed.
+   */
+  const retryProcessing = async (): Promise<OCRExtractionResult | null> => {
     if (lastDocInfo) {
       return processDocument(lastDocInfo.docId, lastDocInfo.url, lastDocInfo.submissionId);
     }
     return null;
   };
 
-  const saveToMasterProfile = async (fieldValues: Record<string, string>) => {
-    try {
-      const mappedProfileUpdates = {
-        fullName: fieldValues.full_name || fieldValues.fullName,
-        dob: fieldValues.date_of_birth || fieldValues.dob,
-        address: fieldValues.address,
-        phone: fieldValues.mobile_number || fieldValues.phone,
-        panNumber: fieldValues.pan_number || fieldValues.panNumber,
-        passportNumber: fieldValues.passport_number || fieldValues.passportNumber,
-        aadhaarNumber: fieldValues.aadhaar_number || fieldValues.aadhaarNumber,
-      };
-
-      await updateProfile(mappedProfileUpdates);
-      addToast('Saved to Master Profile', 'Updated reusable citizen credentials in master_profile.', 'success');
-    } catch (err: any) {
-      addToast('Save Failed', 'Unable to update master_profile in database.', 'error');
-    }
-  };
-
   return {
     processDocument,
     retryProcessing,
-    saveToMasterProfile,
     isProcessing,
     progress,
     error,
-    extractedData,
-    extractedFieldsList,
   };
 }

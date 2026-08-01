@@ -1,9 +1,19 @@
+// ============================================================
+// FORM WORKFLOW CONTEXT
+// Manages wizard state: step, files, extracted fields.
+// All fields start EMPTY — no hardcoded demo values.
+// Supabase writes are delegated to SubmissionService.
+// ============================================================
+
 import React, { createContext, useContext, useState } from 'react';
 import { UploadedFile, ExtractedField, FormSubmission } from '../types';
-import { INITIAL_EXTRACTED_FIELDS } from '../services/kimiAiService';
 import { supabase } from '../lib/supabase';
-import { KimiService } from '../services/kimiService';
+import { OCRService } from '../services/ocrService';
+import { CanonicalKey, validateField } from '../services/ocrService';
 import { CanonicalMappingEngine } from '../services/canonicalMappingEngine';
+import { upsertSubmission, upsertForm, updateMergedFields } from '../services/submissionService';
+
+// ── Context Type ───────────────────────────────────────────
 
 interface FormWorkflowContextType {
   currentStep: number;
@@ -33,144 +43,151 @@ interface FormWorkflowContextType {
 
 const FormWorkflowContext = createContext<FormWorkflowContextType | undefined>(undefined);
 
-export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [activeSubmissionId, setActiveSubmissionId] = useState<string>(() => crypto.randomUUID());
-  const [formFile, setFormFile] = useState<UploadedFile | null>(null);
-  const [supportingFiles, setSupportingFiles] = useState<UploadedFile[]>([]);
-  const [extractedFields, setExtractedFields] = useState<ExtractedField[]>(INITIAL_EXTRACTED_FIELDS);
-  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
+// ── Provider ───────────────────────────────────────────────
 
-  const startNewSubmission = () => {
+export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentStep,       setCurrentStep]       = useState<number>(1);
+  const [activeSubmissionId, setActiveSubmissionId] = useState<string>(() => crypto.randomUUID());
+  const [formFile,          setFormFile]          = useState<UploadedFile | null>(null);
+  const [supportingFiles,   setSupportingFiles]   = useState<UploadedFile[]>([]);
+  // Fields start EMPTY — populated only by real OCR extraction
+  const [extractedFields,   setExtractedFields]   = useState<ExtractedField[]>([]);
+  const [submissions,       setSubmissions]       = useState<FormSubmission[]>([]);
+
+  // ── Start New Submission ──────────────────────────────────
+
+  const startNewSubmission = (): string => {
     const newId = crypto.randomUUID();
     setActiveSubmissionId(newId);
     setFormFile(null);
     setSupportingFiles([]);
-    setExtractedFields(INITIAL_EXTRACTED_FIELDS);
+    setExtractedFields([]); // Always starts empty — no demo data
     setCurrentStep(1);
-    console.log('[Form Workflow] Started New Fresh Submission ID:', newId);
     return newId;
   };
+
+  // ── File Management ───────────────────────────────────────
 
   const addSupportingFile = (file: UploadedFile) => {
     setSupportingFiles((prev) => [...prev, file]);
   };
 
+  // ── Field Update ──────────────────────────────────────────
+
   const updateExtractedField = (id: string, newValue: string) => {
     setExtractedFields((prev) =>
-      prev.map((field) => {
-        if (field.id === id) {
-          return { ...field, value: newValue, isEdited: true, isMissing: !newValue.trim() };
-        }
-        return field;
-      })
+      prev.map((field) =>
+        field.id === id
+          ? { ...field, value: newValue, isEdited: true, isMissing: !newValue.trim() }
+          : field
+      )
     );
   };
+
+  // ── Merge Logic ───────────────────────────────────────────
+  // When new OCR results arrive from a supporting document:
+  // 1. Map raw OCR keys → canonical keys
+  // 2. Validate values
+  // 3. Merge into existing fields
+  //    - Never overwrite a good (high-confidence, filled) value with empty
+  //    - Prefer higher confidence
+  //    - Prefer newer extraction when confidence is equal
+  // 4. Persist to Supabase via SubmissionService
 
   const mergeExtractedFieldsMap = async (
     newFieldsMap: Record<string, string>,
     uploadedFile?: UploadedFile,
     rawOcrText?: string
-  ): Promise<{
-    mergedFields: ExtractedField[];
-    updatedCount: number;
-    successfulNormalizationsCount: number;
-  }> => {
-    const fileObj = uploadedFile || formFile || { name: 'document', url: '' };
-
-    console.log('==================================================');
-    console.log('Uploaded file:', fileObj.name);
-    console.log('Raw OCR text:', rawOcrText || JSON.stringify(newFieldsMap));
-    console.log('Structured JSON:', newFieldsMap);
+  ): Promise<{ mergedFields: ExtractedField[]; updatedCount: number; successfulNormalizationsCount: number }> => {
 
     let updatedCount = 0;
-    let skippedCount = 0;
     let successfulNormalizationsCount = 0;
 
-    const normalizedFieldsObj: Record<string, string> = {};
-    const fieldsUpdatedList: string[] = [];
-    const fieldsSkippedList: { key: string; reason: string }[] = [];
+    // Filter out null/empty values from OCR response
+    const validOcrEntries = Object.entries(newFieldsMap).filter(
+      ([, val]) => val !== null && val !== undefined && typeof val === 'string' && val.trim() !== '' && val !== 'null'
+    );
 
     const updatedList: ExtractedField[] = [...extractedFields];
 
-    const validOcrEntries = Object.entries(newFieldsMap).filter(
-      ([_, val]) => val !== null && val !== undefined && typeof val === 'string' && val.trim() !== '' && val !== 'null'
-    );
+    // If we don't have fields yet (first extraction), build the full list from OCR schema
+    const isFirstExtraction = updatedList.length === 0;
+    if (isFirstExtraction) {
+      const emptyResult = OCRService.buildEmptyResult();
+      updatedList.push(...emptyResult.fields);
+    }
 
     validOcrEntries.forEach(([rawOcrKey, ocrValue]) => {
       const rawVal = ocrValue.trim();
-
       const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
-      const targetCanonicalKey = mappingRes.canonicalKey;
 
-      if (targetCanonicalKey) {
-        successfulNormalizationsCount++;
-        normalizedFieldsObj[targetCanonicalKey] = rawVal;
+      if (!mappingRes.canonicalKey) return;
 
-        const targetIndex = updatedList.findIndex((f) => f.key === targetCanonicalKey);
+      successfulNormalizationsCount++;
 
-        if (targetIndex !== -1) {
-          const existingField = updatedList[targetIndex];
-          const newConfidence = mappingRes.confidence;
+      const targetIndex = updatedList.findIndex((f) => f.key === mappingRes.canonicalKey);
+      if (targetIndex === -1) return;
 
-          const validated = KimiService.validateField(targetCanonicalKey as any, rawVal);
-          const finalVal = validated.value || rawVal;
+      const existingField = updatedList[targetIndex];
+      const { value: validatedVal, confidence: newConfidence } = validateField(
+        mappingRes.canonicalKey as CanonicalKey,
+        rawVal
+      );
 
-          if (finalVal) {
-            updatedCount++;
-            fieldsUpdatedList.push(targetCanonicalKey);
+      if (!validatedVal) return; // Skip empty validated values
 
-            updatedList[targetIndex] = {
-              ...existingField,
-              value: finalVal,
-              confidence: newConfidence,
-              isMissing: false,
-              isLowConfidence: false,
-              isEdited: true,
-            };
-          }
-        }
+      // Merge rule:
+      // - If current field is empty → always take new value
+      // - If new value has higher confidence → prefer new
+      // - If confidence is equal → prefer new (newer extraction wins)
+      // - Never overwrite a filled field with empty
+      const shouldUpdate =
+        !existingField.value ||
+        newConfidence > (existingField.confidence || 0) ||
+        (newConfidence === existingField.confidence && !existingField.isEdited);
+
+      if (shouldUpdate) {
+        updatedCount++;
+        updatedList[targetIndex] = {
+          ...existingField,
+          value:           validatedVal,
+          confidence:      newConfidence,
+          isMissing:       false,
+          isLowConfidence: newConfidence < 85,
+          isEdited:        true,
+        };
       }
     });
 
-    console.log('Normalized JSON:', normalizedFieldsObj);
-    const mergedFieldsObj = updatedList.reduce((acc, f) => ({ ...acc, [f.key]: f.value || '' }), {});
-    console.log('Merged JSON:', mergedFieldsObj);
-    console.log('==================================================');
-
     setExtractedFields(updatedList);
 
+    // Persist merged state to Supabase
     try {
-      await supabase
-        .from('forms')
-        .update({
-          extracted_fields: updatedList,
-          raw_ocr_text: rawOcrText || JSON.stringify(newFieldsMap),
-          created_at: new Date().toISOString(),
-        })
-        .eq('submission_id', activeSubmissionId);
-
-      await supabase
-        .from('submissions')
-        .update({
-          confidence_score: 98,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', activeSubmissionId);
+      await updateMergedFields({
+        submissionId: activeSubmissionId,
+        updatedFields: updatedList,
+        rawOcrText: rawOcrText || JSON.stringify(newFieldsMap),
+      });
     } catch (e) {
-      console.warn('[Supabase Persistence Note]:', e);
+      console.warn('[FormWorkflow] Supabase merge persistence failed:', e);
     }
 
     return { mergedFields: updatedList, updatedCount, successfulNormalizationsCount };
   };
 
-  const addSubmission = async (submission: FormSubmission) => {
+  // ── Add Submission ────────────────────────────────────────
+
+  const addSubmission = async (submission: FormSubmission): Promise<void> => {
     setSubmissions((prev) => [submission, ...prev]);
   };
+
+  // ── Reset ─────────────────────────────────────────────────
 
   const resetWorkflow = () => {
     startNewSubmission();
   };
+
+  // ── Provider ──────────────────────────────────────────────
 
   return (
     <FormWorkflowContext.Provider
@@ -199,8 +216,6 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 export const useFormWorkflow = () => {
   const context = useContext(FormWorkflowContext);
-  if (!context) {
-    throw new Error('useFormWorkflow must be used within a FormWorkflowProvider');
-  }
+  if (!context) throw new Error('useFormWorkflow must be used within a FormWorkflowProvider');
   return context;
 };

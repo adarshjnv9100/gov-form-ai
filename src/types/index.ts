@@ -1,3 +1,8 @@
+// ============================================================
+// GLOBAL TYPE DEFINITIONS
+// All types are derived from real data — no hardcoded defaults
+// ============================================================
+
 export interface User {
   id: string;
   email: string;
@@ -17,7 +22,28 @@ export interface UserProfile {
   completionScore: number;
 }
 
-export type DocumentType = 'GOVERNMENT_FORM' | 'AADHAAR' | 'PAN' | 'PASSPORT' | 'TAX_FILE' | 'OTHER';
+export type DocumentType =
+  | 'GOVERNMENT_FORM'
+  | 'AADHAAR'
+  | 'PAN'
+  | 'PASSPORT'
+  | 'TAX_FILE'
+  | 'BANK'
+  | 'DRIVING_LICENCE'
+  | 'BIRTH_CERTIFICATE'
+  | 'UTILITY_BILL'
+  | 'INCOME_CERTIFICATE'
+  | 'MARRIAGE_CERTIFICATE'
+  | 'OTHER';
+
+export type FieldCategory =
+  | 'PERSONAL'
+  | 'IDENTIFICATION'
+  | 'ADDRESS'
+  | 'TAX'
+  | 'EMPLOYMENT'
+  | 'FINANCIAL'
+  | 'DECLARATION';
 
 export interface UploadedFile {
   id: string;
@@ -42,7 +68,7 @@ export interface ExtractedField {
   isMissing?: boolean;
   isLowConfidence?: boolean;
   isRequired?: boolean;
-  category: 'PERSONAL' | 'IDENTIFICATION' | 'TAX' | 'DECLARATION' | 'ADDRESS' | 'FINANCIAL';
+  category: FieldCategory;
 }
 
 export interface FormSubmission {
@@ -63,4 +89,19 @@ export interface ToastMessage {
   title: string;
   description?: string;
   type: 'success' | 'error' | 'info' | 'warning';
+}
+
+/** Computes the overall confidence score from a list of extracted fields */
+export function computeConfidenceScore(fields: ExtractedField[]): number {
+  const filledFields = fields.filter((f) => f.value && f.value.trim() !== '');
+  if (filledFields.length === 0) return 0;
+  const total = filledFields.reduce((sum, f) => sum + (f.confidence || 0), 0);
+  return Math.round(total / filledFields.length);
+}
+
+/** Returns how many required fields have been filled */
+export function computeCompletionPercentage(fields: ExtractedField[]): number {
+  if (fields.length === 0) return 0;
+  const filled = fields.filter((f) => f.value && f.value.trim() !== '').length;
+  return Math.round((filled / fields.length) * 100);
 }
