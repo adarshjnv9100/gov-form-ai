@@ -109,7 +109,6 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   // Mother Name
   mother_name: 'mother_name',
   mother: 'mother_name',
-  "mother's_name": 'mother_name',
 
   // DOB
   dob: 'date_of_birth',
@@ -117,9 +116,6 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   date_of_birth: 'date_of_birth',
   'd.o.b': 'date_of_birth',
   birthdate: 'date_of_birth',
-  'date birth': 'date_of_birth',
-  birthday: 'date_of_birth',
-  birth: 'date_of_birth',
 
   // Gender
   gender: 'gender',
@@ -131,31 +127,14 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   aadhaar_no: 'aadhaar_number',
   aadhar: 'aadhaar_number',
   adhar: 'aadhaar_number',
-  aadhar_number: 'aadhaar_number',
   uid: 'aadhaar_number',
   uidai: 'aadhaar_number',
-  uid_number: 'aadhaar_number',
-  unique_id: 'aadhaar_number',
 
   // PAN
   pan: 'pan_number',
   pan_number: 'pan_number',
   pan_no: 'pan_number',
   permanent_account_number: 'pan_number',
-  tax_id: 'pan_number',
-  tax_number: 'pan_number',
-
-  // Passport
-  passport: 'passport_number',
-  passport_number: 'passport_number',
-  passport_no: 'passport_number',
-
-  // Driving License
-  dl: 'driving_license_number',
-  dl_number: 'driving_license_number',
-  driving_license: 'driving_license_number',
-  driving_licence: 'driving_license_number',
-  license_number: 'driving_license_number',
 
   // Mobile
   mobile: 'mobile_number',
@@ -163,103 +142,49 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   phone: 'mobile_number',
   phone_number: 'mobile_number',
   contact: 'mobile_number',
-  contact_number: 'mobile_number',
-  telephone: 'mobile_number',
-  cell: 'mobile_number',
-  cellphone: 'mobile_number',
-  'mobile no': 'mobile_number',
 
   // Emergency Contact
   emergency_contact: 'emergency_contact',
   guardian_phone: 'emergency_contact',
   secondary_contact: 'emergency_contact',
-  alternate_contact: 'emergency_contact',
-  alternate_mobile: 'emergency_contact',
-  parent_phone: 'emergency_contact',
-  emergency_phone: 'emergency_contact',
 
   // Email
   email: 'email',
   email_address: 'email',
   mail: 'email',
-  e_mail: 'email',
 
   // Address
   address: 'address',
   address_line: 'address',
   residential_address: 'address',
   permanent_address: 'address',
-  current_address: 'address',
-  home_address: 'address',
-  street_address: 'address',
 
   // City / District
   city: 'city',
   town: 'city',
-  municipality: 'city',
-  locality: 'city',
   district: 'district',
 
   // State
   state: 'state',
-  province: 'state',
-  region: 'state',
-
-  // Country
-  country: 'country',
-  nation: 'country',
 
   // Pincode
   pin: 'pincode',
   pin_code: 'pincode',
-  zipcode: 'pincode',
-  postal_code: 'pincode',
   pincode: 'pincode',
-  zip: 'pincode',
+  postal_code: 'pincode',
 
-  // Bank Name
-  bank: 'bank_name',
-  bank_name: 'bank_name',
-
-  // Bank Account Number
+  // Bank Account & IFSC
   bank_account: 'bank_account_number',
   bank_account_number: 'bank_account_number',
   account_number: 'bank_account_number',
   account_no: 'bank_account_number',
-  acct_no: 'bank_account_number',
-  account: 'bank_account_number',
-  saving_account: 'bank_account_number',
-  current_account: 'bank_account_number',
-
-  // IFSC Code
   ifsc: 'ifsc_code',
   ifsc_code: 'ifsc_code',
   bank_ifsc: 'ifsc_code',
-  branch_ifsc: 'ifsc_code',
-  ifs_code: 'ifsc_code',
-
-  // Branch Name
-  branch: 'branch_name',
-  branch_name: 'branch_name',
-
-  // Annual Income
-  income: 'annual_income',
-  salary: 'annual_income',
   annual_income: 'annual_income',
-  family_income: 'annual_income',
-  gross_income: 'annual_income',
-  yearly_income: 'annual_income',
-  annual_salary: 'annual_income',
-
-  // Occupation
-  occupation: 'occupation',
-  profession: 'occupation',
-  job_title: 'occupation',
+  income: 'annual_income',
 };
 
-/**
- * Step 5: Normalizes raw values (Aadhaar formatting, IFSC uppercase, clean phones, dates)
- */
 export function normalizeOCRFields(rawJson: Record<string, any>): Record<string, any> {
   const normalized: Record<string, any> = {};
 
@@ -309,9 +234,6 @@ export class KimiService {
     );
   }
 
-  /**
-   * Step 5: Normalize and Validate Individual Fields
-   */
   public static validateField(
     key: keyof KimiStructuredSchema,
     rawValue: string,
@@ -326,7 +248,6 @@ export class KimiService {
       return { value: '', confidence: 0 };
     }
 
-    // DEMO DATA GUARD: Reject fake values
     const DEMO_BLOCKED_TERMS = [
       'RAHUL VIKRAM VERMA',
       'SURESH VERMA',
@@ -424,7 +345,8 @@ export class KimiService {
   }
 
   /**
-   * Production-Quality 10-Step OCR Extraction Pipeline
+   * Multimodal Vision OCR Extraction Pipeline
+   * Formats payload with { type: 'image_url', image_url: { url } } for visual document reading.
    */
   public static async extractDocumentJSON(
     documentUrl: string,
@@ -434,15 +356,23 @@ export class KimiService {
     const apiKey = this.apiKey;
     const nvidiaEndpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
-    // Step 4 System Prompt
-    const systemPrompt = `You are an information extraction engine. Extract only information explicitly present in the OCR text. Never invent values. Return valid JSON only.
+    // Translate Cloudinary PDF raw URL to Page 1 Image preview URL for vision OCR if needed
+    let visionTargetUrl = documentUrl;
+    if (documentUrl.includes('cloudinary.com') && (documentUrl.endsWith('.pdf') || documentUrl.includes('/raw/upload/'))) {
+      visionTargetUrl = documentUrl
+        .replace('/raw/upload/', '/image/upload/pg_1/')
+        .replace(/\.pdf$/i, '.jpg');
+    }
 
-Schema:
+    const systemPrompt = `You are a Senior AI Multimodal Document Parser.
+Analyze the uploaded document image/PDF page and extract values for all 18 required government form fields.
+
+Return ONLY valid JSON matching this schema:
 {
   "full_name": null,
   "father_name": null,
   "mother_name": null,
-  "dob": null,
+  "date_of_birth": null,
   "gender": null,
   "aadhaar_number": null,
   "pan_number": null,
@@ -455,18 +385,17 @@ Schema:
   "district": null,
   "state": null,
   "country": null,
-  "postal_code": null,
+  "pincode": null,
   "bank_name": null,
   "bank_account_number": null,
   "ifsc_code": null,
   "branch_name": null,
   "annual_income": null,
   "occupation": null,
-  "emergency_contact": null,
-  "confidence": {}
+  "emergency_contact": null
 }
 
-For every field, if not found in the document, set value as null. Never guess.`;
+If a field is not present in the document image, set value as null. Never guess or invent fake values.`;
 
     const requestBody = {
       model: 'moonshotai/kimi-k2.6-vision',
@@ -474,7 +403,18 @@ For every field, if not found in the document, set value as null. Never guess.`;
         { role: 'system', content: systemPrompt },
         {
           role: 'user',
-          content: `Perform OCR extraction for uploaded document URL: ${documentUrl}`,
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: visionTargetUrl,
+              },
+            },
+            {
+              type: 'text',
+              text: 'Perform OCR extraction on this uploaded government document image/PDF. Extract all visible fields into valid JSON.',
+            },
+          ],
         },
       ],
       temperature: 0.1,
@@ -516,21 +456,20 @@ For every field, if not found in the document, set value as null. Never guess.`;
           (k) => parsed[k] !== null && parsed[k] !== undefined && parsed[k] !== '' && parsed[k] !== 'null'
         );
 
-        // Step 9: Check if OCR returned empty
         if (keysWithValue.length === 0) {
-          console.log('No information could be extracted from this document.');
+          console.log('OCR returned no fields.');
         }
 
-        // Step 2 & 8: Debug Logs
         console.log('Uploaded filename:', documentUrl.split('/').pop() || 'document');
         console.log('Cloudinary URL:', documentUrl);
+        console.log('Vision Target URL:', visionTargetUrl);
         console.log('OCR duration:', `${durationMs}ms`);
         console.log('Raw OCR text:', rawOcrText);
 
         return this.processSemanticOutput(parsed, rawOcrText, durationMs);
       }
     } catch (e) {
-      console.warn('Kimi API call error:', e);
+      console.warn('Kimi Vision API call error:', e);
     }
 
     const durationMs = Math.round(performance.now() - startTime);
