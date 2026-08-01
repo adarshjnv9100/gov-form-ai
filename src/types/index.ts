@@ -69,6 +69,7 @@ export interface ExtractedField {
   isLowConfidence?: boolean;
   isRequired?: boolean;
   category: FieldCategory;
+  source?: 'OCR' | 'PROFILE' | 'DEFAULT';
 }
 
 export interface FormSubmission {

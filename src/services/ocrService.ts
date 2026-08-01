@@ -603,6 +603,7 @@ export class OCRService {
         isLowConfidence: value ? confidence < 85 : false,
         isRequired: meta.isRequired,
         category: meta.category,
+        source: value ? 'OCR' : 'DEFAULT',
       });
     });
 
@@ -635,6 +636,7 @@ export class OCRService {
         isLowConfidence: false,
         isRequired: meta.isRequired,
         category: meta.category,
+        source: 'DEFAULT',
       });
     });
 

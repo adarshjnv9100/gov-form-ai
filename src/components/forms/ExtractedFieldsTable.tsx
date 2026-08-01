@@ -10,7 +10,9 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
-  Info,
+  Sparkles,
+  User,
+  HelpCircle,
 } from 'lucide-react';
 import { ExtractedField } from '../../types';
 import { Button } from '../ui/Button';
@@ -27,7 +29,8 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   onSaveField,
   onConfirmAll,
 }) => {
-  console.log('Review Data', fields);
+  // Requirement 9: Console log rendered form state
+  console.log('[Audit Log] Rendered Form:', JSON.stringify(fields, null, 2));
 
   const { addToast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -43,9 +46,8 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   const needsReviewFields = fields.filter((f) => f.value && f.value.trim() !== '' && f.confidence < 85);
   const missingFields = fields.filter((f) => !f.value || f.value.trim() === '');
 
-  const totalCount = fields.length || 18;
+  const totalCount = fields.length || 26;
   const autoCount = autoFilledFields.length;
-  const manualInputCount = needsReviewFields.length + missingFields.length;
 
   const handleStartEdit = (field: ExtractedField) => {
     setEditingId(field.id);
@@ -55,7 +57,7 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   const handleSaveEdit = (id: string) => {
     onSaveField(id, editValue);
     setEditingId(null);
-    addToast('Field Updated', 'Field value saved to submission state.', 'success');
+    addToast('Field Updated', 'Field value saved to form state.', 'success');
   };
 
   const toggleSection = (section: 'auto' | 'review' | 'missing') => {
@@ -75,6 +77,37 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
     onConfirmAll();
   };
 
+  const renderSourceBadge = (field: ExtractedField) => {
+    const src = field.source || (field.value ? 'OCR' : 'DEFAULT');
+    if (field.isEdited) {
+      return (
+        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">
+          <Edit3 className="w-3 h-3 text-blue-600" /> Manually Edited
+        </span>
+      );
+    }
+    switch (src) {
+      case 'OCR':
+        return (
+          <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-emerald-600" /> OCR ({field.confidence}%)
+          </span>
+        );
+      case 'PROFILE':
+        return (
+          <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-300 flex items-center gap-1">
+            <User className="w-3 h-3 text-indigo-600" /> Master Profile
+          </span>
+        );
+      default:
+        return (
+          <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-300 flex items-center gap-1">
+            <HelpCircle className="w-3 h-3 text-slate-400" /> Default / Empty
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Visual Header Summary Banner */}
@@ -82,10 +115,10 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-teal-400" />
-            <h3 className="text-sm font-extrabold uppercase tracking-wide">OCR Field Verification Overview</h3>
+            <h3 className="text-sm font-extrabold uppercase tracking-wide">Field Source Verification & Priority</h3>
           </div>
           <p className="text-xs text-slate-300">
-            Auto-filled: <span className="font-bold text-emerald-400">{autoCount}</span> • Needs Review: <span className="font-bold text-amber-400">{needsReviewFields.length}</span> • Missing: <span className="font-bold text-rose-400">{missingFields.length}</span>
+            OCR Extracted: <span className="font-bold text-emerald-400">{autoCount}</span> • Profile Fallback: <span className="font-bold text-indigo-300">{fields.filter((f) => f.source === 'PROFILE').length}</span> • Missing: <span className="font-bold text-rose-400">{missingFields.length}</span>
           </p>
         </div>
 
@@ -114,13 +147,13 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
             <span>
-              <strong className="font-bold">Attention Required:</strong> {missingFields.length} field(s) are missing values. Complete missing fields below or use AI recommendations to proceed with PDF generation.
+              <strong className="font-bold">Attention Required:</strong> {missingFields.length} field(s) require manual input. Complete empty fields below to proceed.
             </span>
           </div>
         </div>
       )}
 
-      {/* SECTION 1: 🟢 AUTO-FILLED FIELDS */}
+      {/* SECTION 1: 🟢 AUTO-FILLED / OCR FIELDS */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <button
           onClick={() => toggleSection('auto')}
@@ -132,7 +165,7 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
               <h4 className="text-xs font-extrabold text-emerald-900 uppercase tracking-wide">
                 🟢 Auto-filled Fields ({autoFilledFields.length})
               </h4>
-              <p className="text-[11px] text-emerald-700 font-medium">Extracted with high confidence (≥ 85%)</p>
+              <p className="text-[11px] text-emerald-700 font-medium">Extracted via Gemini OCR or Master Profile (≥ 85% Confidence)</p>
             </div>
           </div>
           {openSections.auto ? <ChevronDown className="w-4 h-4 text-emerald-700" /> : <ChevronRight className="w-4 h-4 text-emerald-700" />}
@@ -148,11 +181,9 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
                   {autoFilledFields.map((field) => (
                     <div key={field.id} className="p-4 hover:bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div className="space-y-0.5 max-w-sm">
-                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                           {field.label}
-                          <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
-                            {field.confidence}% Confidence
-                          </span>
+                          {renderSourceBadge(field)}
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
                       </div>
@@ -216,11 +247,9 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
                   {needsReviewFields.map((field) => (
                     <div key={field.id} className="p-4 hover:bg-amber-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-amber-50/10">
                       <div className="space-y-0.5 max-w-sm">
-                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                           {field.label}
-                          <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                            {field.confidence}% Needs Review
-                          </span>
+                          {renderSourceBadge(field)}
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
                       </div>
@@ -271,7 +300,7 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
                   Required
                 </span>
               </h4>
-              <p className="text-[11px] text-rose-700 font-medium">No value extracted from uploaded documents. Please complete input or upload recommended proof.</p>
+              <p className="text-[11px] text-rose-700 font-medium">No value extracted from uploaded documents or profile. Please complete input below.</p>
             </div>
           </div>
           {openSections.missing ? <ChevronDown className="w-4 h-4 text-rose-700" /> : <ChevronRight className="w-4 h-4 text-rose-700" />}
@@ -289,11 +318,9 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
                   {missingFields.map((field) => (
                     <div key={field.id} className="p-4 bg-rose-50/20 hover:bg-rose-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div className="space-y-0.5 max-w-sm">
-                        <span className="font-bold text-slate-800 flex items-center gap-2">
+                        <span className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                           {field.label}
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-rose-600 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md">
-                            Required
-                          </span>
+                          {renderSourceBadge(field)}
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono block">Key: {field.key}</span>
                       </div>
