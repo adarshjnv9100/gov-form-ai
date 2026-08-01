@@ -528,8 +528,7 @@ export function validateField(
 export class OCRService {
   /**
    * Extracts structured data from a document URL.
-   * Calls the backend /api/ocr route (never NVIDIA directly).
-   * Returns an empty result (not demo data) if extraction fails.
+   * Calls the backend /api/ocr placeholder route.
    */
   public static async extractDocumentJSON(
     documentUrl: string

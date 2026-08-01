@@ -1,9 +1,6 @@
 // ============================================================
-// NEMOTRON SERVICE
-// Sends missing field data to the backend /api/nemotron route.
-// The backend proxies to NVIDIA Nemotron.
-// The NVIDIA API key is NEVER present in this file.
-// Nemotron ONLY recommends documents — never fabricates values.
+// DOCUMENT RECOMMENDATION SERVICE
+// Sends missing field data to the backend /api/nemotron placeholder route.
 // ============================================================
 
 // ── Types ──────────────────────────────────────────────────
