@@ -19,7 +19,8 @@ interface FormWorkflowContextType {
   updateExtractedField: (id: string, newValue: string) => void;
   mergeExtractedFieldsMap: (
     newFieldsMap: Record<string, string>,
-    uploadedFile?: UploadedFile
+    uploadedFile?: UploadedFile,
+    rawOcrText?: string
   ) => Promise<{
     mergedFields: ExtractedField[];
     updatedCount: number;
@@ -53,7 +54,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [extractedFields, setExtractedFields] = useState<ExtractedField[]>(INITIAL_EXTRACTED_FIELDS);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
 
-  // Start new submission with fresh UUID & empty fields
+  // Step 10: Every upload / new submission creates a fresh extraction
   const startNewSubmission = () => {
     const newId = crypto.randomUUID();
     setActiveSubmissionId(newId);
@@ -61,7 +62,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setSupportingFiles([]);
     setExtractedFields(INITIAL_EXTRACTED_FIELDS);
     setCurrentStep(1);
-    console.log('[Form Workflow] Started New Submission ID:', newId);
+    console.log('[Form Workflow] Started New Fresh Submission ID:', newId);
     return newId;
   };
 
@@ -73,7 +74,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setExtractedFields((prev) =>
       prev.map((field) => {
         if (field.id === id) {
-          // DEMO DATA GUARD: Reject any demo strings
+          // DEMO DATA GUARD: Reject fake values
           if (DEMO_BLOCKED_TERMS.some((term) => newValue.toUpperCase().includes(term.toUpperCase()))) {
             console.error('[Demo Data Guard Error] Demo data detected. Runtime fallback is still active.', { id, newValue });
             throw new Error('Demo data detected. Runtime fallback is still active.');
@@ -86,42 +87,48 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   /**
-   * Multiple Document Merge Engine with Confidence Rules:
-   * 1. Higher confidence wins.
-   * 2. Latest uploaded document wins when confidence is equal.
-   * 3. Rejects all hardcoded demo strings.
-   * 4. Logs step-by-step trace: Uploaded File -> OCR Raw Result -> Normalized Fields -> Final JSON -> Supabase.
+   * Production-Quality Merge Engine with Step 8 Diagnostic Logs
    */
   const mergeExtractedFieldsMap = async (
     newFieldsMap: Record<string, string>,
-    uploadedFile?: UploadedFile
+    uploadedFile?: UploadedFile,
+    rawOcrText?: string
   ): Promise<{
     mergedFields: ExtractedField[];
     updatedCount: number;
     successfulNormalizationsCount: number;
   }> => {
-    // 1. Log Uploaded File
-    console.log('==================================================');
-    console.log('Uploaded File:', uploadedFile || formFile || 'Supporting Document');
+    const fileObj = uploadedFile || formFile || { name: 'document', url: '' };
 
-    // 2. Log OCR Raw Result
-    console.log('OCR Raw Result:', newFieldsMap);
+    // Step 8 Debug Logs: Print Uploaded file & Raw OCR text
+    console.log('==================================================');
+    console.log('Uploaded file:', fileObj.name);
+    console.log('Raw OCR text:', rawOcrText || JSON.stringify(newFieldsMap));
+    console.log('Structured JSON:', newFieldsMap);
 
     let updatedCount = 0;
+    let skippedCount = 0;
     let successfulNormalizationsCount = 0;
+
     const normalizedFieldsObj: Record<string, string> = {};
+    const fieldsUpdatedList: string[] = [];
+    const fieldsSkippedList: { key: string; reason: string }[] = [];
 
     const updatedList: ExtractedField[] = [...extractedFields];
 
-    // Iterate through raw OCR extracted map
-    Object.entries(newFieldsMap).forEach(([rawOcrKey, ocrValue]) => {
-      if (ocrValue === null || ocrValue === undefined || typeof ocrValue !== 'string' || ocrValue.trim() === '') {
-        return;
-      }
+    // Step 9: Check if OCR returned empty
+    const validOcrEntries = Object.entries(newFieldsMap).filter(
+      ([_, val]) => val !== null && val !== undefined && typeof val === 'string' && val.trim() !== '' && val !== 'null'
+    );
 
+    if (validOcrEntries.length === 0) {
+      console.log('No information could be extracted from this document.');
+    }
+
+    validOcrEntries.forEach(([rawOcrKey, ocrValue]) => {
       const rawVal = ocrValue.trim();
 
-      // DEMO DATA GUARD: Reject demo strings
+      // DEMO DATA GUARD: Reject fake values
       if (DEMO_BLOCKED_TERMS.some((term) => rawVal.toUpperCase().includes(term.toUpperCase()))) {
         console.error('[Demo Data Guard Error] Demo data detected. Runtime fallback is still active.', {
           rawOcrKey,
@@ -144,11 +151,9 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const hasExistingValue = existingField.value && existingField.value.trim() !== '';
           const newConfidence = mappingRes.confidence;
 
-          // Merge Rules:
-          // A. Fill empty fields.
-          // B. Overwrite existing field ONLY if new confidence > existing confidence or equal (latest document wins).
+          // Step 6 Merge Rules: Fill only empty fields or overwrite if higher confidence
           const shouldUpdate =
-            !hasExistingValue || newConfidence >= (existingField.confidence || 0);
+            !hasExistingValue || newConfidence > (existingField.confidence || 0);
 
           if (shouldUpdate) {
             const validated = KimiService.validateField(targetCanonicalKey as any, rawVal);
@@ -156,6 +161,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
             if (finalVal) {
               updatedCount++;
+              fieldsUpdatedList.push(targetCanonicalKey);
               const isLowConfidence = newConfidence < 80;
 
               updatedList[targetIndex] = {
@@ -166,32 +172,51 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 isLowConfidence,
                 isEdited: true,
               };
+            } else {
+              skippedCount++;
+              fieldsSkippedList.push({
+                key: rawOcrKey,
+                reason: `Validation failed for value "${rawVal}"`,
+              });
             }
+          } else {
+            skippedCount++;
+            fieldsSkippedList.push({
+              key: rawOcrKey,
+              reason: `Verified value "${existingField.value}" exists with higher/equal confidence (${existingField.confidence}% >= ${newConfidence}%)`,
+            });
           }
         }
+      } else {
+        skippedCount++;
+        fieldsSkippedList.push({
+          key: rawOcrKey,
+          reason: `No canonical synonym match found for OCR key "${rawOcrKey}"`,
+        });
       }
     });
 
-    // 3. Log Normalized Fields
-    console.log('Normalized Fields:', normalizedFieldsObj);
+    // Step 8 Debug Logs: Normalized, Merged, Updated, Skipped
+    console.log('Normalized JSON:', normalizedFieldsObj);
 
-    // 4. Log Final JSON Before Save
-    const finalSubmissionObj = updatedList.reduce((acc, f) => ({ ...acc, [f.key]: f.value || '' }), {});
-    console.log('Final JSON Before Save:', finalSubmissionObj);
+    const mergedFieldsObj = updatedList.reduce((acc, f) => ({ ...acc, [f.key]: f.value || '' }), {});
+    console.log('Merged JSON:', mergedFieldsObj);
 
-    // 5. Log Saving to Supabase
-    console.log('Saving to Supabase...');
+    console.log('Fields updated:', fieldsUpdatedList);
+    console.log('Fields skipped:', fieldsSkippedList.map((s) => s.key));
+    console.log('Reason skipped:', fieldsSkippedList);
     console.log('==================================================');
 
     // Update React Context state immediately
     setExtractedFields(updatedList);
 
-    // Save canonical JSON back to Supabase
+    // Step 3: Save canonical JSON and raw_ocr_text back to Supabase
     try {
       await supabase
         .from('forms')
         .update({
           extracted_fields: updatedList,
+          raw_ocr_text: rawOcrText || JSON.stringify(newFieldsMap),
           created_at: new Date().toISOString(),
         })
         .eq('submission_id', activeSubmissionId);

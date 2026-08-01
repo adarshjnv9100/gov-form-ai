@@ -19,7 +19,7 @@ export function useAI() {
     docId: string,
     documentUrl: string,
     submissionId?: string
-  ): Promise<{ structured: KimiStructuredSchema; fields: ExtractedFieldDetail[] } | null> => {
+  ): Promise<{ structured: KimiStructuredSchema; fields: ExtractedFieldDetail[]; rawOcrText?: string } | null> => {
     setIsProcessing(true);
     setProgress(15);
     setError(null);
@@ -50,8 +50,12 @@ export function useAI() {
         });
       }
 
-      addToast('AI Semantic Extraction Complete', 'Validated 13 canonical fields bound to submission.', 'success');
-      return result;
+      addToast('AI Semantic Extraction Complete', 'Validated canonical fields bound to submission.', 'success');
+      return {
+        structured: result.structured,
+        fields: result.fields,
+        rawOcrText: result.rawOcrText,
+      };
     } catch (err: any) {
       const errMsg = err?.message || 'Kimi K2.6 Vision processing failed.';
       setError(errMsg);
@@ -89,13 +93,13 @@ export function useAI() {
   };
 
   return {
+    processDocument,
+    retryProcessing,
+    saveToMasterProfile,
     isProcessing,
     progress,
     error,
     extractedData,
     extractedFieldsList,
-    processDocument,
-    retryProcessing,
-    saveToMasterProfile,
   };
 }

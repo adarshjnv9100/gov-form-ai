@@ -118,7 +118,12 @@ export const NewFormWizardPage: React.FC = () => {
       const res = await processDocument(file.id, file.url, activeSubmissionId);
 
       if (res && res.structured) {
-        const { mergedFields, updatedCount } = await mergeExtractedFieldsMap(res.structured as any);
+        const { mergedFields, updatedCount, successfulNormalizationsCount } = await mergeExtractedFieldsMap(
+          res.structured as any,
+          file,
+          res.rawOcrText
+        );
+
         currentFieldsState = mergedFields;
         totalMerged += updatedCount;
 
@@ -131,10 +136,16 @@ export const NewFormWizardPage: React.FC = () => {
           isBatchProcessing: true,
         });
 
-        addToast(`File ${i + 1}/${files.length} Processed`, `${file.name}: Merged ${updatedCount} field(s).`, 'success');
+        if (updatedCount > 0) {
+          addToast(`File ${i + 1}/${files.length} Processed`, `${file.name}: Merged ${updatedCount} field(s).`, 'success');
+        } else if (successfulNormalizationsCount === 0) {
+          // Step 9: If OCR returns empty / no info extracted
+          addToast(`File ${i + 1}/${files.length} Note`, 'No information could be extracted from this document.', 'warning');
+        }
       }
     }
 
+    // Step 10: Review page always displays exact fresh extraction
     setActiveFields(currentFieldsState);
     await refreshNemotronRecommendations(currentFieldsState);
     setActiveTargetRec(null);

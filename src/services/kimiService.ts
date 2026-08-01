@@ -3,21 +3,27 @@ import { ExtractedField } from '../types';
 export interface KimiStructuredSchema {
   full_name: string;
   father_name: string;
+  mother_name: string;
   date_of_birth: string;
   gender: string;
   aadhaar_number: string;
   pan_number: string;
+  passport_number: string;
+  driving_license_number: string;
   mobile_number: string;
   email: string;
   address: string;
   city: string;
+  district: string;
   state: string;
+  country: string;
   pincode: string;
-  annual_income: string;
+  bank_name: string;
   bank_account_number: string;
   ifsc_code: string;
+  branch_name: string;
+  annual_income: string;
   occupation: string;
-  marital_status: string;
   emergency_contact: string;
 }
 
@@ -37,7 +43,9 @@ export interface KimiExtractionResult {
   structured: KimiStructuredSchema;
   confidences: Record<keyof KimiStructuredSchema, number>;
   fields: ExtractedFieldDetail[];
-  rawText?: string;
+  rawOcrText: string;
+  ocrDurationMs: number;
+  overallConfidence: number;
 }
 
 export const REQUIRED_FIELDS_SCHEMA: Record<
@@ -46,26 +54,32 @@ export const REQUIRED_FIELDS_SCHEMA: Record<
 > = {
   full_name: { label: 'Full Legal Name', isRequired: true, category: 'PERSONAL' },
   father_name: { label: 'Father / Husband Name', isRequired: true, category: 'PERSONAL' },
+  mother_name: { label: 'Mother Name', isRequired: false, category: 'PERSONAL' },
   date_of_birth: { label: 'Date of Birth (DD/MM/YYYY)', isRequired: true, category: 'PERSONAL' },
   gender: { label: 'Gender', isRequired: true, category: 'PERSONAL' },
   aadhaar_number: { label: 'Aadhaar Number (12 Digits)', isRequired: true, category: 'IDENTIFICATION' },
   pan_number: { label: 'PAN Number (10 Alphanumeric)', isRequired: true, category: 'IDENTIFICATION' },
+  passport_number: { label: 'Passport Number', isRequired: false, category: 'IDENTIFICATION' },
+  driving_license_number: { label: 'Driving License Number', isRequired: false, category: 'IDENTIFICATION' },
   mobile_number: { label: 'Mobile Phone Number', isRequired: true, category: 'PERSONAL' },
   email: { label: 'Email Address', isRequired: true, category: 'PERSONAL' },
   address: { label: 'Permanent Residential Address', isRequired: true, category: 'ADDRESS' },
   city: { label: 'City', isRequired: true, category: 'ADDRESS' },
+  district: { label: 'District', isRequired: false, category: 'ADDRESS' },
   state: { label: 'State', isRequired: true, category: 'ADDRESS' },
+  country: { label: 'Country', isRequired: false, category: 'ADDRESS' },
   pincode: { label: 'Pincode (6 Digits)', isRequired: true, category: 'ADDRESS' },
-  annual_income: { label: 'Annual Family Income', isRequired: true, category: 'TAX' },
+  bank_name: { label: 'Bank Name', isRequired: false, category: 'TAX' },
   bank_account_number: { label: 'Bank Account Number', isRequired: true, category: 'TAX' },
   ifsc_code: { label: 'Bank IFSC Code', isRequired: true, category: 'TAX' },
+  branch_name: { label: 'Bank Branch Name', isRequired: false, category: 'TAX' },
+  annual_income: { label: 'Annual Family Income', isRequired: true, category: 'TAX' },
   occupation: { label: 'Occupation / Profession', isRequired: true, category: 'PERSONAL' },
-  marital_status: { label: 'Marital Status', isRequired: true, category: 'PERSONAL' },
   emergency_contact: { label: 'Emergency Contact Number', isRequired: true, category: 'PERSONAL' },
 };
 
 /**
- * Extensive Synonym Dictionary mapping raw OCR variations into canonical form keys
+ * Synonym Dictionary mapping raw OCR key variations into canonical form keys
  */
 export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   // Full Name
@@ -91,6 +105,11 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   parent_name: 'father_name',
   husband_name: 'father_name',
   father_or_husband: 'father_name',
+
+  // Mother Name
+  mother_name: 'mother_name',
+  mother: 'mother_name',
+  "mother's_name": 'mother_name',
 
   // DOB
   dob: 'date_of_birth',
@@ -125,6 +144,18 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   permanent_account_number: 'pan_number',
   tax_id: 'pan_number',
   tax_number: 'pan_number',
+
+  // Passport
+  passport: 'passport_number',
+  passport_number: 'passport_number',
+  passport_no: 'passport_number',
+
+  // Driving License
+  dl: 'driving_license_number',
+  dl_number: 'driving_license_number',
+  driving_license: 'driving_license_number',
+  driving_licence: 'driving_license_number',
+  license_number: 'driving_license_number',
 
   // Mobile
   mobile: 'mobile_number',
@@ -167,12 +198,16 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   town: 'city',
   municipality: 'city',
   locality: 'city',
-  district: 'city',
+  district: 'district',
 
   // State
   state: 'state',
   province: 'state',
   region: 'state',
+
+  // Country
+  country: 'country',
+  nation: 'country',
 
   // Pincode
   pin: 'pincode',
@@ -181,6 +216,10 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   postal_code: 'pincode',
   pincode: 'pincode',
   zip: 'pincode',
+
+  // Bank Name
+  bank: 'bank_name',
+  bank_name: 'bank_name',
 
   // Bank Account Number
   bank_account: 'bank_account_number',
@@ -199,6 +238,10 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   branch_ifsc: 'ifsc_code',
   ifs_code: 'ifsc_code',
 
+  // Branch Name
+  branch: 'branch_name',
+  branch_name: 'branch_name',
+
   // Annual Income
   income: 'annual_income',
   salary: 'annual_income',
@@ -212,14 +255,10 @@ export const CANONICAL_SYNONYMS: Record<string, keyof KimiStructuredSchema> = {
   occupation: 'occupation',
   profession: 'occupation',
   job_title: 'occupation',
-
-  // Marital Status
-  marital_status: 'marital_status',
-  marriage_status: 'marital_status',
 };
 
 /**
- * Normalizes raw OCR dictionary keys into canonical schema keys
+ * Step 5: Normalizes raw values (Aadhaar formatting, IFSC uppercase, clean phones, dates)
  */
 export function normalizeOCRFields(rawJson: Record<string, any>): Record<string, any> {
   const normalized: Record<string, any> = {};
@@ -228,7 +267,7 @@ export function normalizeOCRFields(rawJson: Record<string, any>): Record<string,
     if (value === null || value === undefined) return;
 
     const valStr = typeof value === 'string' ? value.trim() : String(value).trim();
-    if (valStr === '') return;
+    if (valStr === '' || valStr.toLowerCase() === 'null') return;
 
     const cleanKey = rawKey.toLowerCase().trim();
     const cleanSpaceKey = cleanKey.replace(/_/g, ' ');
@@ -242,11 +281,9 @@ export function normalizeOCRFields(rawJson: Record<string, any>): Record<string,
     if (canonicalKey) {
       if (!normalized[canonicalKey]) {
         normalized[canonicalKey] = valStr;
-        console.log(`Mapped: ${rawKey} -> ${canonicalKey}`);
       }
     } else {
       normalized[cleanKey] = valStr;
-      console.warn(`Unknown OCR key: ${rawKey}`);
     }
   });
 
@@ -272,6 +309,9 @@ export class KimiService {
     );
   }
 
+  /**
+   * Step 5: Normalize and Validate Individual Fields
+   */
   public static validateField(
     key: keyof KimiStructuredSchema,
     rawValue: string,
@@ -282,11 +322,11 @@ export class KimiService {
     }
 
     const val = rawValue.trim();
-    if (val === '') {
+    if (val === '' || val.toLowerCase() === 'null') {
       return { value: '', confidence: 0 };
     }
 
-    // DEMO DATA GUARD: Reject any demo strings and log runtime error
+    // DEMO DATA GUARD: Reject fake values
     const DEMO_BLOCKED_TERMS = [
       'RAHUL VIKRAM VERMA',
       'SURESH VERMA',
@@ -310,15 +350,15 @@ export class KimiService {
         const cleanDigits = val.replace(/\s+/g, '');
         if (cleanDigits.length === 12 && /^\d+$/.test(cleanDigits)) {
           const formatted = `${cleanDigits.slice(0, 4)} ${cleanDigits.slice(4, 8)} ${cleanDigits.slice(8, 12)}`;
-          return { value: formatted, confidence: Math.max(defaultConf, 96) };
+          return { value: formatted, confidence: Math.max(defaultConf, 98) };
         }
-        return { value: val, confidence: 75 }; // Mark as Needs Review if format not exact
+        return { value: val, confidence: 75 };
       }
 
       case 'pan_number': {
         const cleanPan = val.toUpperCase().trim();
         if (PATTERNS.pan.test(cleanPan)) {
-          return { value: cleanPan, confidence: Math.max(defaultConf, 95) };
+          return { value: cleanPan, confidence: Math.max(defaultConf, 97) };
         }
         return { value: cleanPan, confidence: 75 };
       }
@@ -327,21 +367,21 @@ export class KimiService {
       case 'emergency_contact': {
         const cleanDigits = val.replace(/[^\d+]/g, '');
         if (PATTERNS.mobile.test(val) || cleanDigits.length >= 10) {
-          return { value: val, confidence: Math.max(defaultConf, 94) };
+          return { value: val, confidence: Math.max(defaultConf, 96) };
         }
         return { value: val, confidence: 75 };
       }
 
       case 'email': {
         if (PATTERNS.email.test(val)) {
-          return { value: val.toLowerCase(), confidence: Math.max(defaultConf, 97) };
+          return { value: val.toLowerCase(), confidence: Math.max(defaultConf, 98) };
         }
         return { value: val, confidence: 75 };
       }
 
       case 'date_of_birth': {
         if (PATTERNS.dob.test(val) || !isNaN(Date.parse(val))) {
-          return { value: val, confidence: Math.max(defaultConf, 96) };
+          return { value: val, confidence: Math.max(defaultConf, 97) };
         }
         return { value: val, confidence: 75 };
       }
@@ -358,14 +398,14 @@ export class KimiService {
       case 'pincode': {
         const cleanPin = val.replace(/\D/g, '');
         if (cleanPin.length === 6) {
-          return { value: cleanPin, confidence: Math.max(defaultConf, 96) };
+          return { value: cleanPin, confidence: Math.max(defaultConf, 97) };
         }
         return { value: val, confidence: 75 };
       }
 
       case 'ifsc_code': {
         if (PATTERNS.ifsc.test(val) || val.length === 11) {
-          return { value: val.toUpperCase(), confidence: Math.max(defaultConf, 95) };
+          return { value: val.toUpperCase(), confidence: Math.max(defaultConf, 96) };
         }
         return { value: val.toUpperCase(), confidence: 75 };
       }
@@ -373,7 +413,7 @@ export class KimiService {
       case 'bank_account_number': {
         const cleanAcc = val.replace(/\D/g, '');
         if (cleanAcc.length >= 9) {
-          return { value: cleanAcc, confidence: Math.max(defaultConf, 92) };
+          return { value: cleanAcc, confidence: Math.max(defaultConf, 95) };
         }
         return { value: val, confidence: 75 };
       }
@@ -383,39 +423,50 @@ export class KimiService {
     }
   }
 
+  /**
+   * Production-Quality 10-Step OCR Extraction Pipeline
+   */
   public static async extractDocumentJSON(
     documentUrl: string,
     fileType?: string
   ): Promise<KimiExtractionResult> {
+    const startTime = performance.now();
     const apiKey = this.apiKey;
     const nvidiaEndpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
-    const systemPrompt = `You are a Senior AI Document Parser.
-Analyze the uploaded document image/PDF and extract values for all 18 required government form fields.
+    // Step 4 System Prompt
+    const systemPrompt = `You are an information extraction engine. Extract only information explicitly present in the OCR text. Never invent values. Return valid JSON only.
 
-Return ONLY valid JSON matching this schema:
+Schema:
 {
-  "full_name": "Full legal name",
-  "father_name": "Father or husband name",
-  "date_of_birth": "DD/MM/YYYY",
-  "gender": "Male, Female, or Other",
-  "aadhaar_number": "12-digit Aadhaar number",
-  "pan_number": "10-character PAN format AAAAA9999A",
-  "mobile_number": "10-digit phone number",
-  "email": "Valid email address",
-  "address": "Full residential address",
-  "city": "City name",
-  "state": "State name",
-  "pincode": "6-digit pincode",
-  "annual_income": "Declared annual income",
-  "bank_account_number": "Bank account number",
-  "ifsc_code": "Bank IFSC code",
-  "occupation": "Profession/Occupation",
-  "marital_status": "Marital status",
-  "emergency_contact": "Emergency contact number"
+  "full_name": null,
+  "father_name": null,
+  "mother_name": null,
+  "dob": null,
+  "gender": null,
+  "aadhaar_number": null,
+  "pan_number": null,
+  "passport_number": null,
+  "driving_license_number": null,
+  "mobile_number": null,
+  "email": null,
+  "address": null,
+  "city": null,
+  "district": null,
+  "state": null,
+  "country": null,
+  "postal_code": null,
+  "bank_name": null,
+  "bank_account_number": null,
+  "ifsc_code": null,
+  "branch_name": null,
+  "annual_income": null,
+  "occupation": null,
+  "emergency_contact": null,
+  "confidence": {}
 }
 
-If a field is not present in the document, set value as empty string "". Never invent or use fake values.`;
+For every field, if not found in the document, set value as null. Never guess.`;
 
     const requestBody = {
       model: 'moonshotai/kimi-k2.6-vision',
@@ -432,6 +483,9 @@ If a field is not present in the document, set value as empty string "". Never i
 
     console.log('Sending to OCR', requestBody);
 
+    let rawOcrText = '';
+    let parsed: Record<string, any> = {};
+
     try {
       const response = await fetch(nvidiaEndpoint, {
         method: 'POST',
@@ -442,14 +496,15 @@ If a field is not present in the document, set value as empty string "". Never i
         body: JSON.stringify(requestBody),
       });
 
+      const durationMs = Math.round(performance.now() - startTime);
+
       if (response.ok) {
         const data = await response.json();
         console.log('OCR Raw Response', data);
 
-        const rawContent = data.choices?.[0]?.message?.content || '';
-        const cleanedJsonText = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+        rawOcrText = data.choices?.[0]?.message?.content || '';
+        const cleanedJsonText = rawOcrText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
-        let parsed: Record<string, any> = {};
         try {
           parsed = JSON.parse(cleanedJsonText);
           console.log('Parsed JSON', parsed);
@@ -458,22 +513,36 @@ If a field is not present in the document, set value as empty string "". Never i
         }
 
         const keysWithValue = Object.keys(parsed).filter(
-          (k) => parsed[k] !== '' && parsed[k] !== null && parsed[k] !== undefined
+          (k) => parsed[k] !== null && parsed[k] !== undefined && parsed[k] !== '' && parsed[k] !== 'null'
         );
+
+        // Step 9: Check if OCR returned empty
         if (keysWithValue.length === 0) {
-          console.log('OCR returned no fields.');
+          console.log('No information could be extracted from this document.');
         }
 
-        return this.processSemanticOutput(parsed);
+        // Step 2 & 8: Debug Logs
+        console.log('Uploaded filename:', documentUrl.split('/').pop() || 'document');
+        console.log('Cloudinary URL:', documentUrl);
+        console.log('OCR duration:', `${durationMs}ms`);
+        console.log('Raw OCR text:', rawOcrText);
+
+        return this.processSemanticOutput(parsed, rawOcrText, durationMs);
       }
     } catch (e) {
       console.warn('Kimi API call error:', e);
     }
 
-    return this.getSemanticFallback();
+    const durationMs = Math.round(performance.now() - startTime);
+    console.log('No information could be extracted from this document.');
+    return this.getSemanticFallback(durationMs);
   }
 
-  private static processSemanticOutput(parsed: Record<string, any>): KimiExtractionResult {
+  private static processSemanticOutput(
+    parsed: Record<string, any>,
+    rawOcrText: string,
+    durationMs: number
+  ): KimiExtractionResult {
     const normalized = normalizeOCRFields(parsed);
     console.log('Mapped Fields', normalized);
 
@@ -484,57 +553,76 @@ If a field is not present in the document, set value as empty string "". Never i
     const rawSchema: KimiStructuredSchema = {
       full_name: normalized.full_name || '',
       father_name: normalized.father_name || '',
-      date_of_birth: normalized.date_of_birth || '',
+      mother_name: normalized.mother_name || '',
+      date_of_birth: normalized.date_of_birth || normalized.dob || '',
       gender: normalized.gender || '',
       aadhaar_number: normalized.aadhaar_number || '',
       pan_number: normalized.pan_number || '',
+      passport_number: normalized.passport_number || '',
+      driving_license_number: normalized.driving_license_number || '',
       mobile_number: normalized.mobile_number || '',
       email: normalized.email || '',
       address: normalized.address || '',
       city: normalized.city || '',
+      district: normalized.district || '',
       state: normalized.state || '',
-      pincode: normalized.pincode || '',
-      annual_income: normalized.annual_income || '',
+      country: normalized.country || '',
+      pincode: normalized.pincode || normalized.postal_code || '',
+      bank_name: normalized.bank_name || '',
       bank_account_number: normalized.bank_account_number || '',
       ifsc_code: normalized.ifsc_code || '',
+      branch_name: normalized.branch_name || '',
+      annual_income: normalized.annual_income || '',
       occupation: normalized.occupation || '',
-      marital_status: normalized.marital_status || '',
       emergency_contact: normalized.emergency_contact || '',
     };
 
-    return this.buildValidatedResult(rawSchema);
+    return this.buildValidatedResult(rawSchema, rawOcrText, durationMs);
   }
 
-  private static getSemanticFallback(): KimiExtractionResult {
+  private static getSemanticFallback(durationMs: number = 0): KimiExtractionResult {
     const rawSchema: KimiStructuredSchema = {
       full_name: '',
       father_name: '',
+      mother_name: '',
       date_of_birth: '',
       gender: '',
       aadhaar_number: '',
       pan_number: '',
+      passport_number: '',
+      driving_license_number: '',
       mobile_number: '',
       email: '',
       address: '',
       city: '',
+      district: '',
       state: '',
+      country: '',
       pincode: '',
-      annual_income: '',
+      bank_name: '',
       bank_account_number: '',
       ifsc_code: '',
+      branch_name: '',
+      annual_income: '',
       occupation: '',
-      marital_status: '',
       emergency_contact: '',
     };
 
-    return this.buildValidatedResult(rawSchema);
+    return this.buildValidatedResult(rawSchema, '', durationMs);
   }
 
-  private static buildValidatedResult(rawSchema: KimiStructuredSchema): KimiExtractionResult {
+  private static buildValidatedResult(
+    rawSchema: KimiStructuredSchema,
+    rawOcrText: string,
+    durationMs: number
+  ): KimiExtractionResult {
     const keys = Object.keys(REQUIRED_FIELDS_SCHEMA) as (keyof KimiStructuredSchema)[];
     const structured: Partial<KimiStructuredSchema> = {};
     const confidences: Record<keyof KimiStructuredSchema, number> = {} as any;
     const fields: ExtractedFieldDetail[] = [];
+
+    let totalConf = 0;
+    let countedFields = 0;
 
     keys.forEach((key, idx) => {
       const meta = REQUIRED_FIELDS_SCHEMA[key];
@@ -543,6 +631,11 @@ If a field is not present in the document, set value as empty string "". Never i
 
       structured[key] = validation.value;
       confidences[key] = validation.confidence;
+
+      if (validation.value && validation.value.trim() !== '') {
+        totalConf += validation.confidence;
+        countedFields++;
+      }
 
       const isMissing = !validation.value || validation.value.trim() === '';
       const isLowConfidence = validation.confidence > 0 && validation.confidence < 80;
@@ -560,11 +653,16 @@ If a field is not present in the document, set value as empty string "". Never i
       });
     });
 
+    const overallConfidence = countedFields > 0 ? Math.round(totalConf / countedFields) : 0;
+    console.log('OCR confidence:', `${overallConfidence}%`);
+
     return {
       structured: structured as KimiStructuredSchema,
       confidences,
       fields,
-      rawText: JSON.stringify(rawSchema),
+      rawOcrText,
+      ocrDurationMs: durationMs,
+      overallConfidence,
     };
   }
 }
