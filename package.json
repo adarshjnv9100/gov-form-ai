@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.15.0",
     "@hookform/resolvers": "^3.10.0",
     "@supabase/supabase-js": "^2.49.1",
     "@types/canvas-confetti": "^1.9.0",
