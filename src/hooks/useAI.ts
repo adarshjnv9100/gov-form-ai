@@ -46,14 +46,22 @@ export function useAI() {
       clearInterval(progressInterval);
       setProgress(100);
 
-      // Store extraction record in Supabase (non-critical — failure does not block)
+      console.log(`[useAI Audit Log] OCR completed for Submission ID: ${submissionId || 'N/A'}`);
+      console.log(`[useAI Audit Log] Mapped Canonical JSON:`, JSON.stringify(result.structured));
+
+      // Store extraction record in Supabase
       if (user?.id && submissionId) {
-        await insertExtractedData({
-          submissionId,
-          userId:      user.id,
-          documentId:  docId,
-          jsonData:    result.structured as unknown as Record<string, string>,
-        }).catch((e) => console.warn('[useAI] insertExtractedData failed (non-critical):', e));
+        try {
+          await insertExtractedData({
+            submissionId,
+            userId:      user.id,
+            documentId:  docId,
+            jsonData:    result.structured as unknown as Record<string, string>,
+          });
+          console.log(`[useAI Audit Log] Supabase save status: SUCCESS (extracted_data inserted for submission ${submissionId})`);
+        } catch (e: any) {
+          console.warn(`[useAI Audit Log] Supabase save status: FAILED (${e?.message})`);
+        }
       }
 
       addToast('Extraction Complete', 'Document analyzed and fields extracted.', 'success');
