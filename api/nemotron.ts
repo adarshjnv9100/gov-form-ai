@@ -5,7 +5,15 @@
 // Nemotron recommends documents — it NEVER fabricates form values.
 // ============================================================
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// ── Inline types — no @vercel/node package required ──────
+interface VercelRequest {
+  method?: string;
+  body: any;
+}
+interface VercelResponse {
+  status(code: number): VercelResponse;
+  json(data: any): void;
+}
 
 const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const NEMOTRON_MODEL  = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';

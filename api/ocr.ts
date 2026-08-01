@@ -5,7 +5,15 @@
 // This file MUST NOT be imported by any frontend code.
 // ============================================================
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// ── Inline types — no @vercel/node package required ──────
+interface VercelRequest {
+  method?: string;
+  body: any;
+}
+interface VercelResponse {
+  status(code: number): VercelResponse;
+  json(data: any): void;
+}
 
 const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
