@@ -104,9 +104,29 @@ function getGeminiApiKey(): string {
 async function fetchDocumentInlinePart(documentUrl: string): Promise<{ inlineData: { data: string; mimeType: string } }> {
   const cleanUrl = documentUrl.trim();
 
-  const response = await fetch(cleanUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch document from Cloudinary URL: HTTP ${response.status} ${response.statusText}`);
+  let response = await fetch(cleanUrl).catch(() => null);
+
+  // Fallback fetching if initial URL returns 404
+  if (!response || !response.ok) {
+    const fallbackUrls: string[] = [];
+    if (cleanUrl.includes('/image/upload/pg_1/')) {
+      fallbackUrls.push(cleanUrl.replace('/image/upload/pg_1/', '/raw/upload/').replace(/\.jpg$/i, '.pdf'));
+      fallbackUrls.push(cleanUrl.replace('/image/upload/pg_1/', '/image/upload/'));
+    } else if (cleanUrl.includes('/raw/upload/')) {
+      fallbackUrls.push(cleanUrl.replace('/raw/upload/', '/image/upload/'));
+    }
+
+    for (const fbUrl of fallbackUrls) {
+      const fbRes = await fetch(fbUrl).catch(() => null);
+      if (fbRes && fbRes.ok) {
+        response = fbRes;
+        break;
+      }
+    }
+  }
+
+  if (!response || !response.ok) {
+    throw new Error(`Failed to fetch document from Cloudinary URL: HTTP ${response?.status || 404} ${response?.statusText || 'Not Found'}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();

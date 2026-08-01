@@ -535,17 +535,6 @@ export class OCRService {
   ): Promise<OCRExtractionResult> {
     const startTime = performance.now();
 
-    let visionTargetUrl = documentUrl;
-    // Convert Cloudinary raw PDF URL to image URL for vision model
-    if (
-      documentUrl.includes('cloudinary.com') &&
-      (documentUrl.endsWith('.pdf') || documentUrl.includes('/raw/upload/'))
-    ) {
-      visionTargetUrl = documentUrl
-        .replace('/raw/upload/', '/image/upload/pg_1/')
-        .replace(/\.pdf$/i, '.jpg');
-    }
-
     let rawOcrText = '';
     let parsed: Record<string, any> = {};
 
@@ -553,7 +542,7 @@ export class OCRService {
       const response = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentUrl: visionTargetUrl }),
+        body: JSON.stringify({ documentUrl }),
       });
 
       const durationMs = Math.round(performance.now() - startTime);

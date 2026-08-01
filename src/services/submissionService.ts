@@ -189,7 +189,6 @@ export async function updateMergedFields(params: UpdateMergedFieldsParams): Prom
       form_code:        'GOV-AUTO-2026',
       status:           'PROCESSING',
       extracted_fields: params.updatedFields,
-      raw_ocr_text:     params.rawOcrText || null,
       confidence_score: confidenceScore,
       updated_at:       timestamp,
     },
