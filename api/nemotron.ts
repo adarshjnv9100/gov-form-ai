@@ -3,6 +3,7 @@
 // Proxies document recommendation requests to NVIDIA Nemotron.
 // The NVIDIA_API_KEY is a server-side environment variable only.
 // Nemotron recommends documents — it NEVER fabricates form values.
+// Includes full CORS headers for browser compatibility.
 // ============================================================
 
 import { validateNvidiaConfig, callNvidiaApi, validateServerEnvironment } from './_nvidia';
@@ -14,6 +15,8 @@ interface VercelRequest {
 interface VercelResponse {
   status(code: number): VercelResponse;
   json(data: any): void;
+  setHeader(name: string, value: string): void;
+  end(): void;
 }
 
 const SUPPORTED_DOCUMENTS = [
@@ -30,6 +33,19 @@ const SUPPORTED_DOCUMENTS = [
 ].join(', ');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Apply CORS headers for cross-origin browser compatibility
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }

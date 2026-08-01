@@ -3,6 +3,7 @@
 // Proxies OCR requests to NVIDIA Kimi K2.6 Vision API.
 // The NVIDIA_API_KEY is a server-side environment variable only.
 // Never exposes API keys or secrets to the browser.
+// Includes full CORS headers for browser compatibility.
 // ============================================================
 
 import { validateNvidiaConfig, callNvidiaApi, validateServerEnvironment } from './_nvidia';
@@ -14,6 +15,8 @@ interface VercelRequest {
 interface VercelResponse {
   status(code: number): VercelResponse;
   json(data: any): void;
+  setHeader(name: string, value: string): void;
+  end(): void;
 }
 
 const SYSTEM_PROMPT = `You are a Senior AI Multimodal Document Parser specializing in Indian government documents.
@@ -55,6 +58,19 @@ RULES:
 - Return only the JSON object with no markdown fences or extra text.`;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Apply CORS headers for cross-origin browser compatibility
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
