@@ -3,6 +3,7 @@ import { CloudinaryService, CloudinaryUploadResult, determineDocumentType } from
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { createDraftSubmission } from '../services/submissionService';
 
 export interface UploadedDocumentRecord {
   id: string;
@@ -85,22 +86,28 @@ export function useUpload() {
 
       // 2. Store metadata in Supabase `documents` table with submission_id
       if (user?.id) {
-        await supabase.from('documents').insert({
-          id: docId,
-          submission_id: submissionId || null,
-          user_id: user.id,
-          file_name: file.name,
-          document_type: finalDocType,
-          cloudinary_url: res.secure_url,
-          public_id: res.public_id,
-          uploaded_at: timestamp,
-          size: file.size,
-          status: 'VERIFIED',
-          name: file.name,
-          type: finalDocType,
-          url: res.secure_url,
-          created_at: timestamp,
-        });
+        if (submissionId) {
+          await createDraftSubmission(submissionId, user.id, file.name);
+        }
+        await supabase.from('documents').upsert(
+          {
+            id: docId,
+            submission_id: submissionId || null,
+            user_id: user.id,
+            file_name: file.name,
+            document_type: finalDocType,
+            cloudinary_url: res.secure_url,
+            public_id: res.public_id,
+            uploaded_at: timestamp,
+            size: file.size,
+            status: 'VERIFIED',
+            name: file.name,
+            type: finalDocType,
+            url: res.secure_url,
+            created_at: timestamp,
+          },
+          { onConflict: 'id' }
+        );
       }
 
       setUploadedDoc(docRecord);

@@ -18,7 +18,7 @@ import { PDFService, PDFGenerationResult } from '../../services/pdfService';
 import { PDFViewerModal } from '../../components/document/PDFViewerModal';
 import { AIAssistantPanel } from '../../components/ai/AIAssistantPanel';
 import { NemotronService, NemotronRecommendationResponse, RecommendedDocumentItem } from '../../services/nemotronService';
-import { upsertSubmission, upsertForm } from '../../services/submissionService';
+import { upsertSubmission, upsertForm, createDraftSubmission } from '../../services/submissionService';
 import { computeConfidenceScore, computeCompletionPercentage, ExtractedField, UploadedFile } from '../../types';
 import {
   Cpu, CheckCircle2, ArrowRight, ArrowLeft, Download,
@@ -220,7 +220,12 @@ export const NewFormWizardPage: React.FC = () => {
     const formCode  = 'GOV-AUTO-2026';
 
     try {
-      // 1. Generate & upload PDF to Cloudinary
+      // 1. Ensure parent submission exists in Supabase
+      if (user?.id) {
+        await createDraftSubmission(activeSubmissionId, user.id, formTitle, formCode);
+      }
+
+      // 2. Generate & upload PDF to Cloudinary
       const res = await PDFService.generateAndUploadPDF(
         formTitle,
         formCode,

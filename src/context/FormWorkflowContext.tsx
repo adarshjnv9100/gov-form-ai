@@ -11,7 +11,8 @@ import { supabase } from '../lib/supabase';
 import { OCRService } from '../services/ocrService';
 import { CanonicalKey, validateField } from '../services/ocrService';
 import { CanonicalMappingEngine } from '../services/canonicalMappingEngine';
-import { upsertSubmission, upsertForm, updateMergedFields } from '../services/submissionService';
+import { useAuth } from './AuthContext';
+import { upsertSubmission, upsertForm, updateMergedFields, createDraftSubmission } from '../services/submissionService';
 
 // ── Context Type ───────────────────────────────────────────
 
@@ -53,6 +54,8 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Fields start EMPTY — populated only by real OCR extraction
   const [extractedFields,   setExtractedFields]   = useState<ExtractedField[]>([]);
   const [submissions,       setSubmissions]       = useState<FormSubmission[]>([]);
+
+  const { user } = useAuth();
 
   // ── Start New Submission ──────────────────────────────────
 
@@ -165,6 +168,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       await updateMergedFields({
         submissionId: activeSubmissionId,
+        userId: user?.id,
         updatedFields: updatedList,
         rawOcrText: rawOcrText || JSON.stringify(newFieldsMap),
       });

@@ -67,7 +67,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (userId: string, userObj?: SupabaseUser) => {
     try {
-      const { data, error } = await supabase.from('master_profile').select('*').eq('id', userId).single();
+      const { data, error } = await supabase
+        .from('master_profile')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
       if (data) {
         setProfile({
@@ -81,7 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           completionScore: data.completion_score || 0,
         });
       } else {
-        // Clean default profile creation without hardcoded demo data
         const defaultProfile: UserProfile = {
           fullName: userObj?.user_metadata?.name || '',
           dob: '',
@@ -93,6 +96,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           completionScore: 0,
         };
         setProfile(defaultProfile);
+
+        // Upsert default profile row with onConflict to avoid 406 / missing profile errors
+        await supabase.from('master_profile').upsert(
+          {
+            id: userId,
+            full_name: defaultProfile.fullName,
+            completion_score: 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
       }
     } catch {
       setProfile(EMPTY_PROFILE);
@@ -119,12 +133,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error;
 
     if (data.user) {
-      await supabase.from('master_profile').upsert({
-        id: data.user.id,
-        full_name: name,
-        completion_score: 0,
-        updated_at: new Date().toISOString(),
-      });
+      await supabase.from('master_profile').upsert(
+        {
+          id: data.user.id,
+          full_name: name,
+          completion_score: 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
     }
   };
 
@@ -155,18 +172,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setProfile(merged);
 
-    await supabase.from('master_profile').upsert({
-      id: supabaseUser.id,
-      full_name: merged.fullName,
-      dob: merged.dob,
-      address: merged.address,
-      phone: merged.phone,
-      pan_number: merged.panNumber,
-      passport_number: merged.passportNumber,
-      aadhaar_number: merged.aadhaarNumber,
-      completion_score: score,
-      updated_at: new Date().toISOString(),
-    });
+    await supabase.from('master_profile').upsert(
+      {
+        id: supabaseUser.id,
+        full_name: merged.fullName,
+        dob: merged.dob,
+        address: merged.address,
+        phone: merged.phone,
+        pan_number: merged.panNumber,
+        passport_number: merged.passportNumber,
+        aadhaar_number: merged.aadhaarNumber,
+        completion_score: score,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
   };
 
   const userObj: User | null = supabaseUser

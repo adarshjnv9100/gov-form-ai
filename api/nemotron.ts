@@ -5,7 +5,8 @@
 // Nemotron recommends documents — it NEVER fabricates form values.
 // ============================================================
 
-// ── Inline types — no @vercel/node package required ──────
+import { validateNvidiaConfig, callNvidiaApi, validateServerEnvironment } from './_nvidia';
+
 interface VercelRequest {
   method?: string;
   body: any;
@@ -14,9 +15,6 @@ interface VercelResponse {
   status(code: number): VercelResponse;
   json(data: any): void;
 }
-
-const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NEMOTRON_MODEL  = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
 
 const SUPPORTED_DOCUMENTS = [
   'Aadhaar Card', 'PAN Card', 'Passport', 'Driving Licence', 'Voter ID Card',
@@ -33,29 +31,41 @@ const SUPPORTED_DOCUMENTS = [
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
-    console.error('[api/nemotron] NVIDIA_API_KEY is not set in server environment.');
-    return res.status(500).json({ error: 'Recommendation service is not configured on the server.' });
+  // Validate server environment
+  validateServerEnvironment();
+
+  // Validate NVIDIA API Key & Model
+  const defaultNemotronModel = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+  const { config, error } = validateNvidiaConfig(defaultNemotronModel);
+
+  if (error || !config) {
+    return res.status(400).json({
+      success: false,
+      message: error || 'Recommendation service is not configured on the server. Missing process.env.NVIDIA_API_KEY.',
+    });
   }
 
-  const { missing_fields, uploaded_documents } = req.body as {
-    missing_fields?: string[];
-    uploaded_documents?: string[];
-  };
+  const { missing_fields, uploaded_documents } = req.body || {};
 
   if (!missing_fields || !Array.isArray(missing_fields)) {
-    return res.status(400).json({ error: 'missing_fields array is required.' });
+    return res.status(400).json({
+      success: false,
+      message: 'missing_fields array is required.',
+    });
   }
 
   if (missing_fields.length === 0) {
-    return res.status(200).json({ completion_percentage: 100, recommendations: [] });
+    return res.status(200).json({
+      success: true,
+      completion_percentage: 100,
+      recommendations: [],
+    });
   }
 
-  const totalFields = 26; // Total canonical schema fields
+  const totalFields = 26;
   const filledCount = totalFields - missing_fields.length;
   const completionPercentage = Math.max(0, Math.round((filledCount / totalFields) * 100));
 
@@ -87,52 +97,44 @@ Return ONLY valid JSON in this exact format:
 
   const userContent = JSON.stringify({ missing_fields, uploaded_documents: uploaded_documents || [] });
 
-  try {
-    const nvidiaResponse = await fetch(NVIDIA_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: NEMOTRON_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userContent },
-        ],
-        temperature: 0.1,
-        max_tokens:  1024,
-      }),
+  const nvidiaRes = await callNvidiaApi(
+    config.apiKey,
+    config.model,
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ],
+    0.1,
+    1024
+  );
+
+  if (!nvidiaRes.success || !nvidiaRes.content) {
+    return res.status(400).json({
+      success: false,
+      message: nvidiaRes.message || 'Failed to generate recommendations from NVIDIA provider.',
     });
-
-    if (!nvidiaResponse.ok) {
-      const errorText = await nvidiaResponse.text().catch(() => '');
-      console.error('[api/nemotron] NVIDIA API error:', nvidiaResponse.status, errorText);
-      return res.status(502).json({ error: `Recommendation provider returned ${nvidiaResponse.status}` });
-    }
-
-    const data     = await nvidiaResponse.json();
-    const rawText  = data.choices?.[0]?.message?.content || '';
-    const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(cleanJson);
-    } catch {
-      console.warn('[api/nemotron] JSON parse failed:', cleanJson.slice(0, 200));
-    }
-
-    if (parsed && Array.isArray(parsed.recommendations)) {
-      return res.status(200).json({
-        completion_percentage: parsed.completion_percentage ?? completionPercentage,
-        recommendations:       parsed.recommendations,
-      });
-    }
-
-    // Parsing failed — return 422 so client falls back to local algorithm
-    return res.status(422).json({ error: 'Invalid response format from AI provider.' });
-  } catch (err: any) {
-    console.error('[api/nemotron] Unexpected error:', err?.message);
-    return res.status(500).json({ error: 'Internal recommendation service error.' });
   }
+
+  const rawText = nvidiaRes.content;
+  const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(cleanJson);
+  } catch {
+    console.warn('[api/nemotron] JSON parse failed on raw text snippet:', cleanJson.slice(0, 200));
+  }
+
+  if (parsed && Array.isArray(parsed.recommendations)) {
+    return res.status(200).json({
+      success: true,
+      completion_percentage: parsed.completion_percentage ?? completionPercentage,
+      recommendations: parsed.recommendations,
+    });
+  }
+
+  return res.status(422).json({
+    success: false,
+    message: 'Invalid response format from AI provider.',
+  });
 }

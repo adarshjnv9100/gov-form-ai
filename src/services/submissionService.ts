@@ -3,10 +3,42 @@
 // Single source of truth for all Supabase write operations
 // related to submissions, forms, and extracted data.
 // Computes real confidence scores — never uses hardcoded values.
+// Ensures parent submission exists BEFORE child record inserts.
+// Uses upsert with onConflict for all write operations.
 // ============================================================
 
 import { supabase } from '../lib/supabase';
 import { ExtractedField, computeConfidenceScore } from '../types';
+
+// ── Ensure Parent Submission Exists ───────────────────────
+
+export async function createDraftSubmission(
+  submissionId: string,
+  userId: string,
+  formTitle = 'Government Form Auto-Fill',
+  formCode = 'GOV-AUTO-2026'
+): Promise<void> {
+  if (!submissionId || !userId || userId === 'anonymous') return;
+  const timestamp = new Date().toISOString();
+
+  const { error } = await supabase.from('submissions').upsert(
+    {
+      id: submissionId,
+      user_id: userId,
+      form_title: formTitle,
+      form_code: formCode,
+      status: 'DRAFT',
+      confidence_score: 0,
+      supporting_files_count: 0,
+      updated_at: timestamp,
+    },
+    { onConflict: 'id' }
+  );
+
+  if (error) {
+    console.warn('[SubmissionService] createDraftSubmission warning:', error.message);
+  }
+}
 
 // ── Upsert Submission ─────────────────────────────────────
 
@@ -22,6 +54,7 @@ export interface UpsertSubmissionParams {
 }
 
 export async function upsertSubmission(params: UpsertSubmissionParams): Promise<void> {
+  if (!params.id || !params.userId || params.userId === 'anonymous') return;
   const confidenceScore = computeConfidenceScore(params.extractedFields);
   const timestamp = new Date().toISOString();
 
@@ -42,7 +75,6 @@ export async function upsertSubmission(params: UpsertSubmissionParams): Promise<
 
   if (error) {
     console.warn('[SubmissionService] upsertSubmission error:', error.message);
-    throw error;
   }
 }
 
@@ -61,6 +93,11 @@ export interface UpsertFormParams {
 }
 
 export async function upsertForm(params: UpsertFormParams): Promise<void> {
+  if (!params.submissionId || !params.userId || params.userId === 'anonymous') return;
+
+  // 1. Ensure parent submission exists FIRST
+  await createDraftSubmission(params.submissionId, params.userId, params.formTitle, params.formCode);
+
   const confidenceScore = computeConfidenceScore(params.extractedFields);
   const timestamp = new Date().toISOString();
 
@@ -84,11 +121,10 @@ export async function upsertForm(params: UpsertFormParams): Promise<void> {
 
   if (error) {
     console.warn('[SubmissionService] upsertForm error:', error.message);
-    throw error;
   }
 }
 
-// ── Insert Extracted Data ─────────────────────────────────
+// ── Upsert Extracted Data ─────────────────────────────────
 
 export interface InsertExtractedDataParams {
   submissionId: string;
@@ -98,19 +134,26 @@ export interface InsertExtractedDataParams {
 }
 
 export async function insertExtractedData(params: InsertExtractedDataParams): Promise<void> {
-  const recordId = `ext_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  if (!params.submissionId || !params.userId || params.userId === 'anonymous') return;
 
-  const { error } = await supabase.from('extracted_data').insert({
-    id:            recordId,
-    submission_id: params.submissionId,
-    user_id:       params.userId,
-    document_id:   params.documentId,
-    json_data:     params.jsonData,
-    created_at:    new Date().toISOString(),
-  });
+  // 1. MUST ensure parent submission exists BEFORE inserting child extracted_data!
+  await createDraftSubmission(params.submissionId, params.userId);
+
+  const recordId = `ext_${params.submissionId}_${params.documentId}`;
+
+  const { error } = await supabase.from('extracted_data').upsert(
+    {
+      id:            recordId,
+      submission_id: params.submissionId,
+      user_id:       params.userId,
+      document_id:   params.documentId,
+      json_data:     params.jsonData,
+      created_at:    new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
 
   if (error) {
-    // Non-critical: log but do not throw
     console.warn('[SubmissionService] insertExtractedData error:', error.message);
   }
 }
@@ -119,11 +162,18 @@ export async function insertExtractedData(params: InsertExtractedDataParams): Pr
 
 export interface UpdateMergedFieldsParams {
   submissionId: string;
+  userId?: string;
   updatedFields: ExtractedField[];
   rawOcrText?: string;
 }
 
 export async function updateMergedFields(params: UpdateMergedFieldsParams): Promise<void> {
+  if (!params.submissionId) return;
+
+  if (params.userId && params.userId !== 'anonymous') {
+    await createDraftSubmission(params.submissionId, params.userId);
+  }
+
   const confidenceScore = computeConfidenceScore(params.updatedFields);
   const timestamp = new Date().toISOString();
 
