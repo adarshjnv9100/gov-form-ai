@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Declare custom element for TypeScript compatibility
 declare global {
@@ -19,9 +19,10 @@ const SCRIPT_URL = 'https://unpkg.com/@elevenlabs/convai-widget-embed';
 
 export const VoiceAssistant: React.FC = () => {
   const widgetRef = useRef<HTMLElement | null>(null);
+  const [bothWidgetsLoaded, setBothWidgetsLoaded] = useState(false);
 
   useEffect(() => {
-    // Ensure the ElevenLabs widget script is loaded only once
+    // 1. Ensure the ElevenLabs widget script is loaded only once
     const existingScript = document.querySelector(`script[src="${SCRIPT_URL}"]`);
     if (!existingScript) {
       const script = document.createElement('script');
@@ -30,6 +31,23 @@ export const VoiceAssistant: React.FC = () => {
       script.type = 'text/javascript';
       document.body.appendChild(script);
     }
+
+    // 2. Detect if Chatbase widget is also loaded in DOM
+    const detectWidgets = () => {
+      const chatbaseElement =
+        document.getElementById('chatbase-bubble-button') ||
+        document.getElementById('chatbase-bubble-window') ||
+        document.querySelector('iframe[src*="chatbase.co"]') ||
+        document.querySelector('iframe[id*="chatbase"]');
+
+      if (chatbaseElement) {
+        setBothWidgetsLoaded(true);
+      }
+    };
+
+    detectWidgets();
+    const interval = setInterval(detectWidgets, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleOpenConversation = () => {
@@ -52,18 +70,44 @@ export const VoiceAssistant: React.FC = () => {
 
   return (
     <>
-      {/* Target & position ElevenLabs widget */}
+      {/* Layout & non-overlapping positioning CSS rules */}
       <style>{`
-        elevenlabs-convai {
-          position: fixed;
-          bottom: 16px;
-          right: 16px;
-          z-index: 9998;
+        /* Chatbase Widget positioning (Above ElevenLabs) */
+        #chatbase-bubble-button,
+        #chatbase-bubble-window,
+        .chatbase-bubble-button,
+        iframe[src*="chatbase.co"],
+        iframe[id*="chatbase"] {
+          bottom: ${bothWidgetsLoaded ? '100px' : '100px'} !important;
+          right: 16px !important;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          z-index: 9997 !important;
         }
+
+        @media (min-width: 640px) {
+          #chatbase-bubble-button,
+          #chatbase-bubble-window,
+          .chatbase-bubble-button,
+          iframe[src*="chatbase.co"],
+          iframe[id*="chatbase"] {
+            bottom: ${bothWidgetsLoaded ? '120px' : '120px'} !important;
+            right: 24px !important;
+          }
+        }
+
+        /* ElevenLabs Custom Element positioning (Bottom Right) */
+        elevenlabs-convai {
+          position: fixed !important;
+          bottom: 16px !important;
+          right: 16px !important;
+          z-index: 9998 !important;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
         @media (min-width: 640px) {
           elevenlabs-convai {
-            bottom: 24px;
-            right: 24px;
+            bottom: 24px !important;
+            right: 24px !important;
           }
         }
       `}</style>
@@ -74,7 +118,7 @@ export const VoiceAssistant: React.FC = () => {
         agent-id={AGENT_ID}
       />
 
-      {/* Custom Floating Action Button */}
+      {/* Custom Floating Action Button for ElevenLabs Voice Assistant */}
       <button
         type="button"
         onClick={handleOpenConversation}
