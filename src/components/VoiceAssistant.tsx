@@ -70,43 +70,46 @@ export const VoiceAssistant: React.FC = () => {
 
   return (
     <>
-      {/* Layout & non-overlapping positioning CSS rules */}
+      {/* Layout & vertical stack positioning CSS rules for corner bubbles */}
       <style>{`
-        /* Chatbase Widget positioning (Above ElevenLabs) */
+        /* 1. Chatbase Widget (Top of vertical stack) */
         #chatbase-bubble-button,
-        #chatbase-bubble-window,
-        .chatbase-bubble-button,
-        iframe[src*="chatbase.co"],
-        iframe[id*="chatbase"] {
-          bottom: ${bothWidgetsLoaded ? '100px' : '100px'} !important;
+        .chatbase-bubble-button {
+          position: fixed !important;
+          bottom: 215px !important;
           right: 16px !important;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
           z-index: 9997 !important;
         }
 
+        /* Chatbase open chat window */
+        #chatbase-bubble-window,
+        iframe[src*="chatbase.co"],
+        iframe[id*="chatbase"] {
+          z-index: 10000 !important;
+        }
+
         @media (min-width: 640px) {
           #chatbase-bubble-button,
-          #chatbase-bubble-window,
-          .chatbase-bubble-button,
-          iframe[src*="chatbase.co"],
-          iframe[id*="chatbase"] {
-            bottom: ${bothWidgetsLoaded ? '120px' : '120px'} !important;
+          .chatbase-bubble-button {
+            bottom: 225px !important;
             right: 24px !important;
           }
         }
 
-        /* ElevenLabs Custom Element positioning (Bottom Right) */
+        /* 2. ElevenLabs Custom Element (Middle of vertical stack) */
         elevenlabs-convai {
           position: fixed !important;
-          bottom: 16px !important;
+          bottom: 76px !important;
           right: 16px !important;
           z-index: 9998 !important;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          display: block !important;
         }
 
         @media (min-width: 640px) {
           elevenlabs-convai {
-            bottom: 24px !important;
+            bottom: 84px !important;
             right: 24px !important;
           }
         }
@@ -118,7 +121,7 @@ export const VoiceAssistant: React.FC = () => {
         agent-id={AGENT_ID}
       />
 
-      {/* Custom Floating Action Button for ElevenLabs Voice Assistant */}
+      {/* 3. Custom Floating Action Button for ElevenLabs Voice Assistant (Bottom of vertical stack) */}
       <button
         type="button"
         onClick={handleOpenConversation}
