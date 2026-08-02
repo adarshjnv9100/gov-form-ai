@@ -321,21 +321,24 @@ export class CanonicalMappingEngine {
   }
 
   /**
-   * Deterministic Direct Canonical Mapping:
-   * Maps extracted OCR data directly to target form fields using canonical keys.
-   * Format: field.value = extractedData[canonicalKey] ?? ""
+   * Deterministic Direct Canonical Mapping with Person-Specific Key Normalization:
+   * Unique Canonical Keys:
+   *   Student: full_name / student_name, student_email, student_mobile, student_occupation, signature_of_student
+   *   Father:  father_name, father_email, father_mobile, father_occupation
+   *   Mother:  mother_name, mother_email, mother_mobile, mother_occupation, signature_of_parents
    */
   public static mapValuesToDetectedTemplate(
     ocrValuesMap: Record<string, string>,
     targetTemplate: ExtractedField[]
   ): {
     updatedTemplate: ExtractedField[];
-    directMappings: any[];
+    canonicalMappings: any[];
+    normalizedOcrMap: Record<string, string>;
   } {
     const updatedTemplate: ExtractedField[] = [...targetTemplate];
-    const directMappings: any[] = [];
+    const canonicalMappings: any[] = [];
 
-    // Normalize ocrValuesMap keys for direct lookup
+    // Step 1: Build Normalized OCR Map
     const normalizedOcrMap: Record<string, string> = {};
     Object.entries(ocrValuesMap).forEach(([k, v]) => {
       if (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim().toLowerCase() !== 'null') {
@@ -351,21 +354,77 @@ export class CanonicalMappingEngine {
       }
     });
 
+    // Step 2: Post-OCR Extraction Normalization (copy generic fields to student fields if unassigned)
+    if (normalizedOcrMap['email'] && !normalizedOcrMap['student_email']) {
+      normalizedOcrMap['student_email'] = normalizedOcrMap['email'];
+    }
+    if (normalizedOcrMap['mobile_number'] && !normalizedOcrMap['student_mobile']) {
+      normalizedOcrMap['student_mobile'] = normalizedOcrMap['mobile_number'];
+    }
+    if (normalizedOcrMap['occupation'] && !normalizedOcrMap['student_occupation']) {
+      normalizedOcrMap['student_occupation'] = normalizedOcrMap['occupation'];
+    }
+    if (normalizedOcrMap['full_name'] && !normalizedOcrMap['student_name']) {
+      normalizedOcrMap['student_name'] = normalizedOcrMap['full_name'];
+    }
+
+    // Step 3: Direct Canonical Key Resolution & Form Population
     updatedTemplate.forEach((field, idx) => {
       if (field.isEdited) return;
 
-      const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(field.label);
-      const targetCanonicalKey = field.key || mappingRes.canonicalKey || field.label.toLowerCase().replace(/[\s\-_]+/g, '_');
+      const labelLower = field.label.toLowerCase();
 
-      // Direct lookup by canonicalKey, field key, or field label
-      const val =
-        normalizedOcrMap[targetCanonicalKey] ||
-        normalizedOcrMap[field.key] ||
-        normalizedOcrMap[field.label.toLowerCase()] ||
-        normalizedOcrMap[field.label.toLowerCase().replace(/[\s\-_]+/g, '_')];
+      // Resolve Unique Person-Specific Canonical Key
+      let targetCanonicalKey = '';
+
+      if (labelLower.includes('father') && (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact'))) {
+        targetCanonicalKey = 'father_mobile';
+      } else if (labelLower.includes('mother') && (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact'))) {
+        targetCanonicalKey = 'mother_mobile';
+      } else if ((labelLower.includes('student') || labelLower.includes('schooler') || labelLower.includes('applicant') || labelLower.includes('member')) && (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact'))) {
+        targetCanonicalKey = 'student_mobile';
+      } else if (labelLower.includes('father') && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
+        targetCanonicalKey = 'father_email';
+      } else if (labelLower.includes('mother') && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
+        targetCanonicalKey = 'mother_email';
+      } else if ((labelLower.includes('student') || labelLower.includes('schooler') || labelLower.includes('applicant') || labelLower.includes('member')) && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
+        targetCanonicalKey = 'student_email';
+      } else if (labelLower.includes('father') && labelLower.includes('occupation')) {
+        targetCanonicalKey = 'father_occupation';
+      } else if (labelLower.includes('mother') && labelLower.includes('occupation')) {
+        targetCanonicalKey = 'mother_occupation';
+      } else if ((labelLower.includes('student') || labelLower.includes('applicant')) && labelLower.includes('occupation')) {
+        targetCanonicalKey = 'student_occupation';
+      } else if (labelLower.includes('student') && labelLower.includes('signature')) {
+        targetCanonicalKey = 'signature_of_student';
+      } else if ((labelLower.includes('parent') || labelLower.includes('father') || labelLower.includes('mother') || labelLower.includes('guardian')) && labelLower.includes('signature')) {
+        targetCanonicalKey = 'signature_of_parents';
+      } else {
+        const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(field.label);
+        targetCanonicalKey = field.key || mappingRes.canonicalKey || field.label.toLowerCase().replace(/[\s\-_]+/g, '_');
+      }
+
+      // Priority Lookup (with Backward Compatibility for Student fields)
+      let val: string | undefined = undefined;
+
+      if (targetCanonicalKey === 'student_mobile') {
+        val = normalizedOcrMap['student_mobile'] || normalizedOcrMap['mobile_number'];
+      } else if (targetCanonicalKey === 'student_email') {
+        val = normalizedOcrMap['student_email'] || normalizedOcrMap['email'];
+      } else if (targetCanonicalKey === 'student_occupation') {
+        val = normalizedOcrMap['student_occupation'] || normalizedOcrMap['occupation'];
+      } else if (targetCanonicalKey === 'student_name') {
+        val = normalizedOcrMap['student_name'] || normalizedOcrMap['full_name'];
+      } else {
+        val =
+          normalizedOcrMap[targetCanonicalKey] ||
+          normalizedOcrMap[field.key] ||
+          normalizedOcrMap[labelLower] ||
+          normalizedOcrMap[labelLower.replace(/[\s\-_]+/g, '_')];
+      }
 
       if (val && val.trim()) {
-        directMappings.push({
+        canonicalMappings.push({
           formLabel: field.label,
           canonicalKey: targetCanonicalKey,
           value: val.trim(),
@@ -373,6 +432,7 @@ export class CanonicalMappingEngine {
 
         updatedTemplate[idx] = {
           ...field,
+          key: targetCanonicalKey,
           value: val.trim(),
           confidence: 95,
           isMissing: false,
@@ -382,6 +442,6 @@ export class CanonicalMappingEngine {
       }
     });
 
-    return { updatedTemplate, directMappings };
+    return { updatedTemplate, canonicalMappings, normalizedOcrMap };
   }
 }

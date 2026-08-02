@@ -45,6 +45,8 @@ export interface CanonicalSchema {
   student_occupation: string;
   father_occupation: string;
   mother_occupation: string;
+  signature_of_student: string;
+  signature_of_parents: string;
   emergency_contact: string;
 }
 
@@ -94,6 +96,8 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
   student_occupation:    { label: 'Student Occupation',            isRequired: false, category: 'EMPLOYMENT' },
   father_occupation:     { label: 'Father Occupation',             isRequired: false, category: 'EMPLOYMENT' },
   mother_occupation:     { label: 'Mother Occupation',             isRequired: false, category: 'EMPLOYMENT' },
+  signature_of_student:  { label: 'Student Signature',             isRequired: false, category: 'PERSONAL' },
+  signature_of_parents:  { label: 'Parent Signature',              isRequired: false, category: 'PERSONAL' },
   emergency_contact:     { label: 'Emergency Contact Number',      isRequired: true,  category: 'PERSONAL' },
 };
 

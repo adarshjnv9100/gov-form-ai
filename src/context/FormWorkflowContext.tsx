@@ -270,22 +270,22 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
       targetTemplate.push(...buildInitialFieldsWithMasterProfile(profile));
     }
 
-    // Direct Deterministic Canonical Mapping
-    const { updatedTemplate, directMappings } = CanonicalMappingEngine.mapValuesToDetectedTemplate(
+    // Direct Deterministic Canonical Mapping & Normalization
+    const { updatedTemplate, canonicalMappings, normalizedOcrMap } = CanonicalMappingEngine.mapValuesToDetectedTemplate(
       newFieldsMap,
       targetTemplate
     );
 
-    const updatedCount = directMappings.length;
-    const successfulNormalizationsCount = directMappings.length;
+    const updatedCount = canonicalMappings.length;
+    const successfulNormalizationsCount = canonicalMappings.length;
 
-    // Audit Logs
-    console.log('==================== DIRECT CANONICAL MAPPING LOGS ====================');
+    // Structured Audit Logs
+    console.log('==================== CANONICAL MAPPING ARCHITECTURE LOGS ====================');
     console.log('[Audit Log] Detected document type:', docType);
-    console.log('[Audit Log] Extracted OCR values:', JSON.stringify(newFieldsMap, null, 2));
-    console.log('[Audit Log] Direct Canonical Mappings:', JSON.stringify(directMappings, null, 2));
-    console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(updatedTemplate.map((f) => ({ label: f.label, value: f.value })), null, 2));
-    console.log('=======================================================================');
+    console.log('[Audit Log] Canonical Mapping:', JSON.stringify(canonicalMappings, null, 2));
+    console.log('[Audit Log] Normalized OCR:', JSON.stringify(normalizedOcrMap, null, 2));
+    console.log('[Audit Log] Final Dynamic Form:', JSON.stringify(updatedTemplate.map((f) => ({ label: f.label, canonicalKey: f.key, value: f.value })), null, 2));
+    console.log('=============================================================================');
 
     setExtractedFields(updatedTemplate);
 
