@@ -12,7 +12,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UploadedFile, ExtractedField, FormSubmission, UserProfile } from '../types';
 import { OCRService } from '../services/ocrService';
-import { CanonicalKey, validateField } from '../services/ocrService';
+import { CanonicalKey, validateField, FIELD_SCHEMA } from '../services/ocrService';
 import { CanonicalMappingEngine } from '../services/canonicalMappingEngine';
 import { useAuth } from './AuthContext';
 
@@ -23,6 +23,9 @@ interface FormWorkflowContextType {
   startNewSubmission: () => string;
   formFile: UploadedFile | null;
   setFormFile: (file: UploadedFile | null) => void;
+  uploadedForms: UploadedFile[];
+  addUploadedForm: (file: UploadedFile) => Promise<ExtractedField[]>;
+  selectTargetForm: (file: UploadedFile) => Promise<ExtractedField[]>;
   supportingFiles: UploadedFile[];
   addSupportingFile: (file: UploadedFile) => void;
   extractedFields: ExtractedField[];
@@ -71,6 +74,7 @@ function getProfileValueForCanonicalKey(key: string, profile?: UserProfile): str
 
 /**
  * Builds initial field list using Master Profile as fallback (Priority: Master Profile > Default).
+ * Only used if the user did not upload an application form.
  */
 function buildInitialFieldsWithMasterProfile(profile?: UserProfile): ExtractedField[] {
   const emptyResult = OCRService.buildEmptyResult();
@@ -101,14 +105,91 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [currentStep,       setCurrentStep]       = useState<number>(1);
   const [activeSubmissionId, setActiveSubmissionId] = useState<string>(() => crypto.randomUUID());
   const [formFile,          setFormFile]          = useState<UploadedFile | null>(null);
+  const [uploadedForms,     setUploadedForms]     = useState<UploadedFile[]>([]);
   const [supportingFiles,   setSupportingFiles]   = useState<UploadedFile[]>([]);
   
-  // Fields initialized with Master Profile as fallback — updated immediately by OCR
+  // Fields initialized with Master Profile as fallback — replaced dynamically when application form is uploaded
   const [extractedFields,   setExtractedFields]   = useState<ExtractedField[]>(() =>
     buildInitialFieldsWithMasterProfile(profile)
   );
 
   const [submissions,       setSubmissions]       = useState<FormSubmission[]>([]);
+
+  // ── Target Application Form Detection & Field Extraction ───
+
+  // ── Target Application Form Detection & Field Extraction ───
+
+  const selectTargetForm = async (file: UploadedFile): Promise<ExtractedField[]> => {
+    setFormFile(file);
+
+    let extracted: ExtractedField[] = [];
+    let docType: 'APPLICATION_FORM' | 'SUPPORTING_DOCUMENT' = 'APPLICATION_FORM';
+
+    try {
+      // Extract form structure & fields from uploaded application form via OCR
+      const ocrResult = await OCRService.extractDocumentJSON(file.url);
+      const rawFieldsMap = ocrResult.structured as unknown as Record<string, string>;
+
+      // Stage 1: Document Classification
+      docType = CanonicalMappingEngine.classifyDocument(rawFieldsMap, 'APPLICATION_FORM');
+
+      // Stage 2: Parse uploaded form & detect every fillable field label
+      const detectedFields: ExtractedField[] = [];
+      let fieldIdx = 1;
+
+      // Extract keys that are present / detected in the uploaded form
+      const rawEntries = Object.entries(rawFieldsMap);
+      const activeEntries = rawEntries.filter(([_, val]) => val !== null && val !== undefined);
+      const entriesToProcess = activeEntries.length > 0 ? activeEntries : rawEntries.slice(0, 8);
+
+      entriesToProcess.forEach(([rawKey, _]) => {
+        const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawKey);
+        const canonicalKey = mappingRes.canonicalKey || rawKey;
+        const meta = FIELD_SCHEMA[canonicalKey as CanonicalKey] || {
+          label: rawKey.replace(/_/g, ' ').toUpperCase(),
+          isRequired: true,
+          category: 'PERSONAL'
+        };
+
+        detectedFields.push({
+          id: `form_field_${canonicalKey}_${fieldIdx++}`,
+          key: canonicalKey,
+          label: meta.label,
+          value: '', // Values left blank for application form
+          confidence: 0,
+          isMissing: true,
+          isLowConfidence: false,
+          isRequired: meta.isRequired,
+          category: meta.category,
+          source: 'FORM_DETECTED',
+        });
+      });
+
+      extracted = detectedFields;
+    } catch (e) {
+      console.warn('[FormWorkflowContext] Error extracting fields from target form:', e);
+      extracted = buildInitialFieldsWithMasterProfile(profile);
+    }
+
+    // Required Debug Logs (Requirement 9)
+    console.log('==================== DEBUG LOGS: APPLICATION FORM PARSED ====================');
+    console.log('[Audit Log] Detected document type:', docType);
+    console.log('[Audit Log] Detected form fields:', JSON.stringify(extracted.map((f) => f.label), null, 2));
+    console.log('[Audit Log] Canonical fields:', JSON.stringify(extracted.map((f) => f.key), null, 2));
+    console.log('[Audit Log] Rendered fields:', JSON.stringify(extracted.map((f) => ({ key: f.key, label: f.label })), null, 2));
+    console.log('=============================================================================');
+
+    setExtractedFields(extracted);
+    return extracted;
+  };
+
+  const addUploadedForm = async (file: UploadedFile): Promise<ExtractedField[]> => {
+    setUploadedForms((prev) => {
+      const exists = prev.some((f) => f.id === file.id);
+      return exists ? prev : [...prev, file];
+    });
+    return await selectTargetForm(file);
+  };
 
   // ── Start New Submission ──────────────────────────────────
 
@@ -116,6 +197,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const newId = crypto.randomUUID();
     setActiveSubmissionId(newId);
     setFormFile(null);
+    setUploadedForms([]);
     setSupportingFiles([]);
     setExtractedFields(buildInitialFieldsWithMasterProfile(profile));
     setCurrentStep(1);
@@ -129,7 +211,6 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   // ── User Manual Edit ──────────────────────────────────────
-  // Priority 1: User Manual Edit is supreme and cannot be overwritten
 
   const updateExtractedField = (id: string, newValue: string) => {
     setExtractedFields((prev) =>
@@ -147,13 +228,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
   };
 
-  // ── Strict Priority Merge Engine ──────────────────────────
-  // Priority Hierarchy: User Manual Edit > OCR Extracted Values > Master Profile > Default Values
-  // Rules:
-  // 1. Never overwrite OCR values with Master Profile.
-  // 2. Never reload Master Profile after OCR completes.
-  // 3. Never replace a populated value with null/empty.
-  // 4. Update React state immediately.
+  // ── Stage 3: Semantic Mapping & Priority Merge Engine ─────
 
   const mergeExtractedFieldsMap = async (
     newFieldsMap: Record<string, string>,
@@ -164,36 +239,40 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     let updatedCount = 0;
     let successfulNormalizationsCount = 0;
 
-    // Requirement 9 Logs
-    console.log('==================== OCR REVIEW MERGE ENGINE ====================');
-    console.log('[Audit Log] Master Profile:', JSON.stringify(profile, null, 2));
-    console.log('[Audit Log] OCR JSON:', JSON.stringify(newFieldsMap, null, 2));
-
+    const docType = CanonicalMappingEngine.classifyDocument(newFieldsMap, 'SUPPORTING_DOCUMENT');
     const updatedList: ExtractedField[] = [...extractedFields];
 
-    // Ensure list is populated
     if (updatedList.length === 0) {
       updatedList.push(...buildInitialFieldsWithMasterProfile(profile));
     }
 
-    // Process canonical entries from OCR JSON
+    const mappedFieldsLog: any[] = [];
+
+    // Semantic Mapping: Map OCR values to detected form fields
     Object.entries(newFieldsMap).forEach(([rawOcrKey, ocrValue]) => {
       const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
       const targetKey = mappingRes.canonicalKey || (rawOcrKey in DEFAULT_CANONICAL_SCHEMA_KEYS ? rawOcrKey : null);
       
       if (!targetKey) return;
 
-      const targetIndex = updatedList.findIndex((f) => f.key === targetKey);
+      const targetIndex = updatedList.findIndex(
+        (f) => f.key === targetKey || f.label.toLowerCase().includes(rawOcrKey.toLowerCase())
+      );
       if (targetIndex === -1) return;
 
       const existingField = updatedList[targetIndex];
 
-      // Priority 1: Never overwrite user manual edits
-      if (existingField.isEdited) {
-        return;
-      }
+      mappedFieldsLog.push({
+        ocrSourceKey: rawOcrKey,
+        targetFormLabel: existingField.label,
+        canonicalKey: targetKey,
+        matchType: mappingRes.matchType,
+        confidence: `${mappingRes.confidence}%`,
+        extractedValue: ocrValue,
+      });
 
-      // Check if OCR has a valid non-empty value
+      if (existingField.isEdited) return;
+
       const hasOcrVal = ocrValue !== null && ocrValue !== undefined && typeof ocrValue === 'string' && ocrValue.trim() !== '' && ocrValue.trim().toLowerCase() !== 'null';
 
       if (hasOcrVal) {
@@ -205,8 +284,6 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
         );
 
         if (validatedVal && validatedVal.trim()) {
-          // Priority 2: Use OCR Extracted Values!
-          // Replace profile or default values with OCR extracted value
           const isCurrentFromProfileOrDefault = existingField.source === 'PROFILE' || existingField.source === 'DEFAULT' || !existingField.value;
           const isHigherConfidence = newConfidence >= (existingField.confidence || 0);
 
@@ -222,33 +299,17 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
             };
           }
         }
-      } else {
-        // OCR value for this key is null/empty
-        // Priority 3: Keep existing OCR value if present; otherwise fall back to Master Profile
-        if (existingField.source === 'OCR' && existingField.value) {
-          // NEVER overwrite OCR value with Master Profile or null!
-          return;
-        }
-
-        const profileVal = getProfileValueForCanonicalKey(targetKey, profile);
-        if (profileVal && profileVal.trim() && !existingField.value) {
-          updatedList[targetIndex] = {
-            ...existingField,
-            value: profileVal.trim(),
-            confidence: 80,
-            isMissing: false,
-            source: 'PROFILE',
-          };
-        }
       }
     });
 
-    // Requirement 9 Logs
-    console.log('[Audit Log] Merged Form:', JSON.stringify(updatedList, null, 2));
-    console.log('[Audit Log] Rendered Form:', JSON.stringify(updatedList, null, 2));
-    console.log('==================================================================');
+    // Required Debug Logs (Requirement 9)
+    console.log('==================== DEBUG LOGS: SEMANTIC MAPPING ====================');
+    console.log('[Audit Log] Detected document type:', docType);
+    console.log('[Audit Log] Extracted OCR values:', JSON.stringify(newFieldsMap, null, 2));
+    console.log('[Audit Log] Mapped fields:', JSON.stringify(mappedFieldsLog, null, 2));
+    console.log('[Audit Log] Rendered fields:', JSON.stringify(updatedList.map((f) => ({ label: f.label, value: f.value })), null, 2));
+    console.log('======================================================================');
 
-    // Requirement 7 & 8: Update React form state immediately
     setExtractedFields(updatedList);
 
     return { mergedFields: updatedList, updatedCount, successfulNormalizationsCount };
@@ -285,6 +346,9 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
         startNewSubmission,
         formFile,
         setFormFile,
+        uploadedForms,
+        addUploadedForm,
+        selectTargetForm,
         supportingFiles,
         addSupportingFile,
         extractedFields,

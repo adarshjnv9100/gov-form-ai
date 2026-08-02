@@ -105,6 +105,14 @@ export const CANONICAL_SYNONYMS: Record<string, CanonicalKey> = {
   'beneficiary name':     'full_name',
   employee_name:          'full_name',
   student_name:           'full_name',
+  'student name':         'full_name',
+  schooler_name:          'full_name',
+  'schooler name':        'full_name',
+  schooler:               'full_name',
+  name_of_member:         'full_name',
+  'name of member':       'full_name',
+  member_name:            'full_name',
+  'member name':          'full_name',
 
   // ── Father Name ────────────────────────────────────────
   father_name:            'father_name',

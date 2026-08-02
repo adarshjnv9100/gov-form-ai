@@ -29,8 +29,8 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   onSaveField,
   onConfirmAll,
 }) => {
-  // Requirement 9: Console log rendered form state
-  console.log('[Audit Log] Rendered Form:', JSON.stringify(fields, null, 2));
+  // Requirement 9: Console log rendered fields state
+  console.log('[Audit Log] Rendered fields:', JSON.stringify(fields.map((f) => ({ key: f.key, label: f.label, value: f.value })), null, 2));
 
   const { addToast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   const needsReviewFields = fields.filter((f) => f.value && f.value.trim() !== '' && f.confidence < 85);
   const missingFields = fields.filter((f) => !f.value || f.value.trim() === '');
 
-  const totalCount = fields.length || 26;
+  const totalCount = fields.length;
   const autoCount = autoFilledFields.length;
 
   const handleStartEdit = (field: ExtractedField) => {

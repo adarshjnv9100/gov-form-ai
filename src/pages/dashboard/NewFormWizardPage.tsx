@@ -47,6 +47,9 @@ export const NewFormWizardPage: React.FC = () => {
     startNewSubmission,
     formFile,
     setFormFile,
+    uploadedForms,
+    addUploadedForm,
+    selectTargetForm,
     supportingFiles,
     addSupportingFile,
     extractedFields,
@@ -340,18 +343,58 @@ export const NewFormWizardPage: React.FC = () => {
           {currentStep === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Step 1: Upload Government Form PDF</h3>
+                <h3 className="text-lg font-bold text-slate-900">Step 1: Upload Government Application Form</h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Upload the official blank or partially-filled government form template.
+                  Upload your target government application form (PDF or image). The AI will detect and extract its fillable fields dynamically.
                 </p>
               </div>
 
               <FileUploader
-                title="Select Government Form Template (PDF, PNG, JPEG, JPG)"
+                title="Select Government Application Form (PDF, PNG, JPEG, JPG)"
                 docType="GOVERNMENT_FORM"
-                allowMultiple={false}
-                onUploadSuccess={(file) => setFormFile({ ...file, submissionId: activeSubmissionId })}
+                allowMultiple={true}
+                onUploadSuccess={async (file) => {
+                  const uploaded = { ...file, submissionId: activeSubmissionId };
+                  await addUploadedForm(uploaded);
+                }}
+                onBatchUploadSuccess={async (files) => {
+                  const uploadedFiles = files.map((f) => ({ ...f, submissionId: activeSubmissionId }));
+                  for (let i = 0; i < uploadedFiles.length; i++) {
+                    await addUploadedForm(uploadedFiles[i]);
+                  }
+                }}
               />
+
+              {/* Multiple Application Forms Choice (Requirement 9) */}
+              {uploadedForms.length > 0 && (
+                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-blue-600" /> Target Application Forms ({uploadedForms.length})
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {uploadedForms.map((f) => {
+                      const isSelected = formFile?.id === f.id;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => selectTargetForm(f)}
+                          className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between text-xs cursor-pointer ${
+                            isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-200 font-bold text-blue-900' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                          }`}
+                        >
+                          <span className="truncate max-w-[200px]">{f.name}</span>
+                          {isSelected ? (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">Active Target Form</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-semibold">Select to fill</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end pt-4 border-t border-slate-100">
                 <Button disabled={!formFile} onClick={() => setCurrentStep(2)} rightIcon={<ArrowRight className="w-4 h-4" />}>
@@ -496,11 +539,30 @@ export const NewFormWizardPage: React.FC = () => {
           {currentStep === 4 && (
             <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Step 4: Review & Edit Extracted Form Fields</h3>
+                <h3 className="text-lg font-bold text-slate-900">Step 4: Review & Edit Form Fields</h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  AI Assistant recommends documents to auto-fill missing fields. Edit any values before generating PDF.
+                  Extracted fields are dynamically matched from your uploaded form layout. Review and edit values before generating PDF.
                 </p>
               </div>
+
+              {/* Uploaded Form Layout Reference Card (Requirement 10) */}
+              {formFile && (
+                <div className="p-4 bg-slate-900 rounded-2xl text-white space-y-2 border border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-teal-300">
+                      <FileText className="w-4 h-4" /> Target Application Form Document: <span className="text-white font-mono">{formFile.name}</span>
+                    </div>
+                    <a
+                      href={formFile.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-mono text-teal-400 underline hover:text-teal-300 flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Open Uploaded Form Original
+                    </a>
+                  </div>
+                </div>
+              )}
 
               <AIAssistantPanel
                 submissionId={activeSubmissionId}

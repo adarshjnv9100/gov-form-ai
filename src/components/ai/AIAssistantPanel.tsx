@@ -37,7 +37,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           </div>
         </div>
         <span className="px-4 py-1.5 bg-emerald-500 text-slate-950 font-extrabold rounded-full text-xs shadow-glow">
-          18 / 18 Complete
+          {completedCount} / {totalRequiredCount} Complete
         </span>
       </div>
     );

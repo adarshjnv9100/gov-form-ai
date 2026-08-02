@@ -192,9 +192,53 @@ function wordOverlapSimilarity(a: string, b: string): number {
   return intersection.size / Math.max(setA.size, setB.size);
 }
 
+export type DocClassificationType = 'APPLICATION_FORM' | 'SUPPORTING_DOCUMENT';
+
 // ── Canonical Mapping Engine ───────────────────────────────
 
 export class CanonicalMappingEngine {
+  /**
+   * Stage 1: Classifies an uploaded document into APPLICATION_FORM or SUPPORTING_DOCUMENT.
+   * APPLICATION_FORM: mostly blank form containing labels and empty input fields.
+   * SUPPORTING_DOCUMENT: contains populated values (Aadhaar, Worker Card, PAN, Passport, Bank Passbook, etc.)
+   */
+  public static classifyDocument(
+    rawFieldsMap: Record<string, any>,
+    hintDocType?: string
+  ): DocClassificationType {
+    if (hintDocType === 'GOVERNMENT_FORM' || hintDocType === 'APPLICATION_FORM') {
+      return 'APPLICATION_FORM';
+    }
+    if (
+      hintDocType === 'AADHAAR' ||
+      hintDocType === 'PAN' ||
+      hintDocType === 'PASSPORT' ||
+      hintDocType === 'PASSBOOK' ||
+      hintDocType === 'SUPPORTING_DOCUMENT'
+    ) {
+      return 'SUPPORTING_DOCUMENT';
+    }
+
+    const entries = Object.entries(rawFieldsMap);
+    if (entries.length === 0) return 'APPLICATION_FORM';
+
+    let populatedCount = 0;
+    entries.forEach(([_, val]) => {
+      if (val !== null && val !== undefined) {
+        const strVal = String(val).trim();
+        if (strVal !== '' && strVal.toLowerCase() !== 'null' && strVal.toLowerCase() !== 'n/a') {
+          populatedCount++;
+        }
+      }
+    });
+
+    const populatedRatio = populatedCount / entries.length;
+    return populatedRatio < 0.4 ? 'APPLICATION_FORM' : 'SUPPORTING_DOCUMENT';
+  }
+
+  /**
+   * Stage 3: Map OCR field keys using semantic similarity & fuzzy matching.
+   */
   public static mapOCRFieldKey(rawKey: string): MappingResult {
     if (!rawKey || typeof rawKey !== 'string') {
       return { rawKey: '', normalizedKey: '', canonicalKey: null, confidence: 0, matchType: 'UNMAPPED', needsReview: false };
@@ -208,7 +252,6 @@ export class CanonicalMappingEngine {
     if (CANONICAL_SYNONYMS[cleanLower]) {
       return { rawKey: cleanRaw, normalizedKey, canonicalKey: CANONICAL_SYNONYMS[cleanLower], confidence: 99, matchType: 'EXACT', needsReview: false };
     }
-    // Also try space → underscore and underscore → space variants
     const spaceVariant = cleanLower.replace(/_/g, ' ');
     const underVariant = cleanLower.replace(/\s+/g, '_');
     if (CANONICAL_SYNONYMS[spaceVariant]) {
@@ -227,7 +270,7 @@ export class CanonicalMappingEngine {
       }
     }
 
-    // ── 3. Normalized Synonym Match ───────────────────────
+    // ── 3. Normalized Synonym & Semantic Match ────────────
     const synonymEntries = Object.entries(CANONICAL_SYNONYMS);
     for (const [synonym, canonical] of synonymEntries) {
       if (normalizeKeyString(synonym) === normalizedKey) {
