@@ -3,11 +3,13 @@ import { Outlet, Navigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopNav } from './TopNav';
 import { useAuth } from '../../context/AuthContext';
-import { Menu, X, ShieldCheck, Loader2 } from 'lucide-react';
+import { Menu, X, ShieldCheck, Loader2, Mic } from 'lucide-react';
+import { VoiceAssistant } from '../VoiceAssistant';
 
 export const DashboardLayout: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   if (loading) {
     return (
@@ -64,8 +66,28 @@ export const DashboardLayout: React.FC = () => {
           <span className="font-bold text-sm text-slate-900">Government Form AI</span>
         </div>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto relative">
           <Outlet />
+
+          {/* Floating Voice Assistant Trigger */}
+          <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+            {voiceOpen && (
+              <VoiceAssistant onClose={() => setVoiceOpen(false)} className="w-[90vw] sm:w-[420px]" />
+            )}
+
+            {!voiceOpen && (
+              <button
+                type="button"
+                onClick={() => setVoiceOpen(true)}
+                className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-700 hover:to-teal-700 text-white rounded-full shadow-2xl shadow-blue-600/40 hover:scale-105 active:scale-95 transition-all group font-bold text-xs border border-white/20"
+              >
+                <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center group-hover:rotate-12 transition-transform">
+                  <Mic className="w-4 h-4 text-white" />
+                </div>
+                <span>AI Voice Assistant</span>
+              </button>
+            )}
+          </div>
         </main>
       </div>
     </div>
