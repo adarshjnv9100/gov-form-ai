@@ -14,6 +14,7 @@ export interface CanonicalSchema {
   father_name: string;
   mother_name: string;
   student_name: string;
+  class: string;
   date_of_birth: string;
   gender: string;
   marital_status: string;
@@ -65,6 +66,7 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
   father_name:           { label: 'Father / Husband Name',         isRequired: true,  category: 'PERSONAL' },
   mother_name:           { label: 'Mother Name',                   isRequired: false, category: 'PERSONAL' },
   student_name:          { label: "Student's Name",                isRequired: true,  category: 'PERSONAL' },
+  class:                 { label: 'Class / Standard / Grade',       isRequired: false, category: 'PERSONAL' },
   date_of_birth:         { label: 'Date of Birth (DD/MM/YYYY)',    isRequired: true,  category: 'PERSONAL' },
   gender:                { label: 'Gender',                        isRequired: true,  category: 'PERSONAL' },
   marital_status:        { label: 'Marital Status',                isRequired: false, category: 'PERSONAL' },
@@ -107,7 +109,7 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
 // government form label variations, plural forms, S/O D/O W/O etc.
 
 export const CANONICAL_SYNONYMS: Record<string, CanonicalKey> = {
-  // ── Full Name ──────────────────────────────────────────
+  // ── Full Name / Student Name ───────────────────────────
   full_name:              'full_name',
   fullname:               'full_name',
   'full name':            'full_name',
@@ -128,15 +130,25 @@ export const CANONICAL_SYNONYMS: Record<string, CanonicalKey> = {
   beneficiary_name:       'full_name',
   'beneficiary name':     'full_name',
   employee_name:          'full_name',
-  student_name:           'full_name',
-  'student name':         'full_name',
-  schooler_name:          'full_name',
-  'schooler name':        'full_name',
-  schooler:               'full_name',
-  name_of_member:         'full_name',
-  'name of member':       'full_name',
-  member_name:            'full_name',
-  'member name':          'full_name',
+
+  student_name:           'student_name',
+  'student name':         'student_name',
+  "student's name":       'student_name',
+  "student's_name":       'student_name',
+  schooler_name:          'student_name',
+  'schooler name':        'student_name',
+  schooler:               'student_name',
+  name_of_member:         'student_name',
+  'name of member':       'student_name',
+  member_name:            'student_name',
+  'member name':          'student_name',
+
+  // ── Class / Grade ──────────────────────────────────────
+  class:                  'class',
+  standard:               'class',
+  grade:                  'class',
+  class_standard:         'class',
+  'class / standard':     'class',
 
   // ── Father Name ────────────────────────────────────────
   father_name:            'father_name',

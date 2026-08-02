@@ -294,12 +294,15 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Helper set for canonical keys validation
   const DEFAULT_CANONICAL_SCHEMA_KEYS: Record<string, boolean> = {
-    full_name: true, father_name: true, mother_name: true, date_of_birth: true,
+    full_name: true, father_name: true, mother_name: true, student_name: true, class: true, date_of_birth: true,
     gender: true, marital_status: true, aadhaar_number: true, pan_number: true,
     passport_number: true, driving_license_number: true, voter_id: true,
-    mobile_number: true, email: true, address: true, city: true, district: true,
-    state: true, country: true, pincode: true, bank_name: true, bank_account_number: true,
-    ifsc_code: true, branch_name: true, annual_income: true, occupation: true, emergency_contact: true,
+    mobile_number: true, student_mobile: true, father_mobile: true, mother_mobile: true,
+    email: true, student_email: true, father_email: true, mother_email: true,
+    address: true, city: true, district: true, state: true, country: true, pincode: true,
+    bank_name: true, bank_account_number: true, ifsc_code: true, branch_name: true,
+    annual_income: true, occupation: true, student_occupation: true, father_occupation: true, mother_occupation: true,
+    signature_of_student: true, signature_of_parents: true, emergency_contact: true,
   };
 
   // ── Add Submission ────────────────────────────────────────

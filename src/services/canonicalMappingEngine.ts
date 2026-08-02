@@ -381,20 +381,28 @@ export class CanonicalMappingEngine {
         targetCanonicalKey = 'father_mobile';
       } else if (labelLower.includes('mother') && (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact'))) {
         targetCanonicalKey = 'mother_mobile';
-      } else if ((labelLower.includes('student') || labelLower.includes('schooler') || labelLower.includes('applicant') || labelLower.includes('member')) && (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact'))) {
+      } else if (labelLower.includes('phone') || labelLower.includes('mobile') || labelLower.includes('contact')) {
         targetCanonicalKey = 'student_mobile';
       } else if (labelLower.includes('father') && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
         targetCanonicalKey = 'father_email';
       } else if (labelLower.includes('mother') && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
         targetCanonicalKey = 'mother_email';
-      } else if ((labelLower.includes('student') || labelLower.includes('schooler') || labelLower.includes('applicant') || labelLower.includes('member')) && (labelLower.includes('email') || labelLower.includes('e-mail'))) {
+      } else if (labelLower.includes('email') || labelLower.includes('e-mail')) {
         targetCanonicalKey = 'student_email';
       } else if (labelLower.includes('father') && labelLower.includes('occupation')) {
         targetCanonicalKey = 'father_occupation';
       } else if (labelLower.includes('mother') && labelLower.includes('occupation')) {
         targetCanonicalKey = 'mother_occupation';
-      } else if ((labelLower.includes('student') || labelLower.includes('applicant')) && labelLower.includes('occupation')) {
+      } else if (labelLower.includes('occupation') || labelLower.includes('profession')) {
         targetCanonicalKey = 'student_occupation';
+      } else if (labelLower.includes('father') && labelLower.includes('name')) {
+        targetCanonicalKey = 'father_name';
+      } else if (labelLower.includes('mother') && labelLower.includes('name')) {
+        targetCanonicalKey = 'mother_name';
+      } else if ((labelLower.includes('student') || labelLower.includes('schooler') || labelLower.includes('member')) && labelLower.includes('name')) {
+        targetCanonicalKey = 'student_name';
+      } else if (labelLower.includes('class') || labelLower.includes('standard') || labelLower.includes('grade')) {
+        targetCanonicalKey = 'class';
       } else if (labelLower.includes('student') && labelLower.includes('signature')) {
         targetCanonicalKey = 'signature_of_student';
       } else if ((labelLower.includes('parent') || labelLower.includes('father') || labelLower.includes('mother') || labelLower.includes('guardian')) && labelLower.includes('signature')) {
@@ -404,17 +412,33 @@ export class CanonicalMappingEngine {
         targetCanonicalKey = field.key || mappingRes.canonicalKey || field.label.toLowerCase().replace(/[\s\-_]+/g, '_');
       }
 
-      // Priority Lookup (with Backward Compatibility for Student fields)
+      // Priority Lookup (Strict Role Segregation & Backward Compatibility)
       let val: string | undefined = undefined;
 
       if (targetCanonicalKey === 'student_mobile') {
         val = normalizedOcrMap['student_mobile'] || normalizedOcrMap['mobile_number'];
+      } else if (targetCanonicalKey === 'father_mobile') {
+        val = normalizedOcrMap['father_mobile'];
+      } else if (targetCanonicalKey === 'mother_mobile') {
+        val = normalizedOcrMap['mother_mobile'];
       } else if (targetCanonicalKey === 'student_email') {
         val = normalizedOcrMap['student_email'] || normalizedOcrMap['email'];
+      } else if (targetCanonicalKey === 'father_email') {
+        val = normalizedOcrMap['father_email'];
+      } else if (targetCanonicalKey === 'mother_email') {
+        val = normalizedOcrMap['mother_email'];
       } else if (targetCanonicalKey === 'student_occupation') {
         val = normalizedOcrMap['student_occupation'] || normalizedOcrMap['occupation'];
+      } else if (targetCanonicalKey === 'father_occupation') {
+        val = normalizedOcrMap['father_occupation'];
+      } else if (targetCanonicalKey === 'mother_occupation') {
+        val = normalizedOcrMap['mother_occupation'];
       } else if (targetCanonicalKey === 'student_name') {
         val = normalizedOcrMap['student_name'] || normalizedOcrMap['full_name'];
+      } else if (targetCanonicalKey === 'father_name') {
+        val = normalizedOcrMap['father_name'];
+      } else if (targetCanonicalKey === 'mother_name') {
+        val = normalizedOcrMap['mother_name'];
       } else {
         val =
           normalizedOcrMap[targetCanonicalKey] ||
