@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { PDFViewerModal } from '../../components/document/PDFViewerModal';
 import { supabase } from '../../lib/supabase';
 import { FormSubmission } from '../../types';
+import { VoiceEvents } from '../../services/VoiceEvents';
 
 export const OverviewPage: React.FC = () => {
   const { profile, user } = useAuth();
@@ -33,6 +34,7 @@ export const OverviewPage: React.FC = () => {
 
   // Strictly query Supabase for logged-in user's records (user_id = authenticated user ID)
   useEffect(() => {
+    VoiceEvents.announceDashboard();
     let isSubscribed = true;
 
     const fetchUserData = async () => {

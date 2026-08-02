@@ -20,6 +20,7 @@ import { AIAssistantPanel } from '../../components/ai/AIAssistantPanel';
 import { NemotronService, NemotronRecommendationResponse, RecommendedDocumentItem } from '../../services/nemotronService';
 import { upsertSubmission, upsertForm, createDraftSubmission } from '../../services/submissionService';
 import { computeConfidenceScore, computeCompletionPercentage, ExtractedField, UploadedFile } from '../../types';
+import { VoiceEvents } from '../../services/VoiceEvents';
 import {
   Cpu, CheckCircle2, ArrowRight, ArrowLeft, Download,
   RefreshCw, FileText, AlertCircle, Eye, Bot, Sparkles, Layers,
@@ -77,10 +78,16 @@ export const NewFormWizardPage: React.FC = () => {
     setActiveFields(extractedFields);
   }, [extractedFields]);
 
-  // Refresh Nemotron recommendations whenever we land on Step 4
+  // Refresh recommendations and announce voice events whenever step changes
   useEffect(() => {
     if (currentStep === 4 && activeFields.length > 0) {
       refreshNemotronRecommendations(activeFields);
+      const hasMissing = activeFields.some((f) => f.isRequired && (!f.value || !f.value.trim()));
+      if (hasMissing) {
+        VoiceEvents.announceMissingFields();
+      }
+    } else if (currentStep === 5) {
+      VoiceEvents.announceDownloadReady();
     }
   }, [currentStep]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -111,6 +118,7 @@ export const NewFormWizardPage: React.FC = () => {
   const handleProcessBatchUploadedFiles = async (files: UploadedFile[]) => {
     if (files.length === 0) return;
 
+    VoiceEvents.announceOCRStarted();
     setCurrentStep(3);
     setBatchStatus({
       currentIndex:      1,
@@ -184,6 +192,7 @@ export const NewFormWizardPage: React.FC = () => {
     await refreshNemotronRecommendations(currentFieldsState);
     setActiveTargetRec(null);
     setBatchStatus(null);
+    VoiceEvents.announceOCRCompleted();
     setCurrentStep(4);
 
     const completionPct = computeCompletionPercentage(currentFieldsState);
@@ -356,12 +365,14 @@ export const NewFormWizardPage: React.FC = () => {
                 onUploadSuccess={async (file) => {
                   const uploaded = { ...file, submissionId: activeSubmissionId };
                   await addUploadedForm(uploaded);
+                  VoiceEvents.announceFormUpload();
                 }}
                 onBatchUploadSuccess={async (files) => {
                   const uploadedFiles = files.map((f) => ({ ...f, submissionId: activeSubmissionId }));
                   for (let i = 0; i < uploadedFiles.length; i++) {
                     await addUploadedForm(uploadedFiles[i]);
                   }
+                  VoiceEvents.announceFormUpload();
                 }}
               />
 
@@ -437,6 +448,7 @@ export const NewFormWizardPage: React.FC = () => {
                 onBatchUploadSuccess={async (files) => {
                   const uploadedFiles = files.map((f) => ({ ...f, submissionId: activeSubmissionId }));
                   uploadedFiles.forEach((uf) => addSupportingFile(uf));
+                  VoiceEvents.announceDocumentUpload();
                   await handleProcessBatchUploadedFiles(uploadedFiles);
                 }}
               />
