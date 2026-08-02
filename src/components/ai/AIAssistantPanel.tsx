@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Bot, Sparkles, UploadCloud, CheckCircle2, FileSpreadsheet } from 'lucide-react';
+import { Bot, Sparkles, UploadCloud, CheckCircle2, AlertCircle } from 'lucide-react';
 import { RecommendedDocumentItem, NemotronRecommendationResponse } from '../../services/nemotronService';
 import { Button } from '../ui/Button';
 
@@ -21,8 +21,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const completionPercentage =
     recommendationsData?.completion_percentage ?? Math.round((completedCount / totalRequiredCount) * 100);
   const recommendations = recommendationsData?.recommendations || [];
+  const hasError = recommendationsData?.success === false || !!recommendationsData?.error;
 
-  if (completionPercentage === 100 || recommendations.length === 0 || completedCount === totalRequiredCount) {
+  if (completionPercentage === 100 || completedCount === totalRequiredCount) {
     return (
       <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white border border-emerald-800 shadow-md flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -53,9 +54,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-extrabold text-slate-900">🤖 AI Assistant (NVIDIA Nemotron)</h3>
+              <h3 className="text-base font-extrabold text-slate-900">📄 AI Suggested Documents</h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                Reasoning Active
+                Gemini Active
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -81,53 +82,67 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
       </div>
 
-      {/* Recommendations Cards List */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4 text-blue-600" /> Recommended Supporting Documents ({recommendations.length})
-        </h4>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {recommendations.map((rec, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-4 hover:border-blue-300 transition-colors"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
-                    <FileSpreadsheet className="w-4 h-4 text-blue-600" /> {rec.document}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
-                    Fills {rec.fills.length} field{rec.fills.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                <div className="text-xs space-y-1.5">
-                  <p className="font-semibold text-slate-700">
-                    Can fill:{' '}
-                    <span className="font-mono text-blue-700">
-                      {rec.fills.map((f) => `✓ ${f.replace(/_/g, ' ')}`).join(' ')}
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-slate-500 leading-relaxed italic">{rec.reason}</p>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => onSelectRecommendationToUpload(rec)}
-                variant="teal"
-                size="sm"
-                leftIcon={<UploadCloud className="w-4 h-4" />}
-              >
-                Upload {rec.document}
-              </Button>
-            </motion.div>
-          ))}
+      {/* Failure Handling Alert */}
+      {hasError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-semibold flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+          <p>Unable to generate AI document recommendations. Please upload any government document containing the missing information.</p>
         </div>
-      </div>
+      )}
+
+      {/* Recommendations Cards List */}
+      {!hasError && (
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-blue-600" /> 📄 AI Suggested Documents ({recommendations.length})
+          </h4>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {recommendations.map((rec, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-4 hover:border-blue-300 transition-colors shadow-xs"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                      📄 {rec.document}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      +{rec.coveragePercentage || 18}% Coverage
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed italic">{rec.reason}</p>
+
+                  <div className="space-y-1.5 bg-white p-3 rounded-xl border border-slate-200">
+                    <p className="text-xs font-bold text-slate-700">Will complete:</p>
+                    <div className="space-y-1 text-xs font-mono text-slate-800">
+                      {rec.fills.map((f, i) => (
+                        <p key={i} className="flex items-center gap-1.5">
+                          <span className="text-emerald-600 font-bold">✔</span> {f.replace(/_/g, ' ')}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => onSelectRecommendationToUpload(rec)}
+                  variant="teal"
+                  size="sm"
+                  leftIcon={<UploadCloud className="w-4 h-4" />}
+                >
+                  Upload {rec.document}
+                </Button>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

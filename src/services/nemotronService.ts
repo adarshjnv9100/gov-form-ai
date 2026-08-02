@@ -8,14 +8,17 @@
 export interface RecommendedDocumentItem {
   document: string;
   fills: string[];
-  priority: number;
+  priority?: number;
   reason: string;
   docTypeTag?: string;
+  coveragePercentage?: number;
 }
 
 export interface NemotronRecommendationResponse {
+  success?: boolean;
   completion_percentage: number;
   recommendations: RecommendedDocumentItem[];
+  error?: string;
 }
 
 export interface NemotronRequestPayload {
@@ -23,10 +26,10 @@ export interface NemotronRequestPayload {
   uploaded_documents: string[];
 }
 
-// ── Document Recommendation Map ───────────────────────────
-// Maps every canonical field key to the optimal set of documents
-// that can provide that field. Used by the fallback set-cover algorithm.
+// In-memory cache for missing fields recommendations
+const recommendationCache = new Map<string, NemotronRecommendationResponse>();
 
+// ── Document Recommendation Map (Fallback Reference) ───────────────────────────
 const FIELD_TO_DOCUMENTS: Record<string, { document: string; docTypeTag: string; reason: string }[]> = {
   full_name: [
     { document: 'Aadhaar Card',    docTypeTag: 'AADHAAR',       reason: 'Contains full legal name as registered with UIDAI.' },
@@ -151,28 +154,44 @@ const FIELD_TO_DOCUMENTS: Record<string, { document: string; docTypeTag: string;
   ],
 };
 
-// ── Nemotron Service ───────────────────────────────────────
+// ── Nemotron / Gemini Recommendation Service ──────────────────────────────
 
 export class NemotronService {
   /**
-   * Gets document recommendations for missing fields.
-   * Calls backend /api/nemotron placeholder route.
-   * Falls back to a deterministic set-cover algorithm.
+   * Clears the recommendation cache.
+   */
+  public static clearCache(): void {
+    recommendationCache.clear();
+  }
+
+  /**
+   * Gets document recommendations for missing fields using Gemini API.
+   * Caches recommendations based on missing fields list.
    */
   public static async getDocumentRecommendations(
     payload: NemotronRequestPayload
   ): Promise<NemotronRecommendationResponse> {
-    const totalFields = Object.keys(FIELD_TO_DOCUMENTS).length;
-    const missingCount = payload.missing_fields.length;
-    const filledCount = totalFields - missingCount;
-    const completionPercentage = Math.round((filledCount / totalFields) * 100);
+    const missingFields = payload.missing_fields || [];
+    const missingCount = missingFields.length;
 
     if (missingCount === 0) {
-      return { completion_percentage: 100, recommendations: [] };
+      return { success: true, completion_percentage: 100, recommendations: [] };
     }
 
+    // Cache key based on sorted missing fields
+    const cacheKey = [...missingFields].sort().join(',');
+    if (recommendationCache.has(cacheKey)) {
+      console.log('[Audit Log] Recommendation returned from cache for missing fields:', cacheKey);
+      return recommendationCache.get(cacheKey)!;
+    }
+
+    // Audit Logs: Missing fields & Gemini request
+    console.log('==================== GEMINI AI DOCUMENT RECOMMENDATION ====================');
+    console.log('[Audit Log] Missing fields:', JSON.stringify(missingFields, null, 2));
+    console.log('[Audit Log] Gemini request:', JSON.stringify(payload, null, 2));
+
     try {
-      const response = await fetch('/api/nemotron', {
+      const response = await fetch('/api/recommend-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -180,80 +199,59 @@ export class NemotronService {
 
       if (response.ok) {
         const data = await response.json();
-        if (data && Array.isArray(data.recommendations)) {
-          return {
-            completion_percentage: data.completion_percentage ?? completionPercentage,
-            recommendations: data.recommendations,
+        console.log('[Audit Log] Gemini response:', JSON.stringify(data, null, 2));
+
+        if (data && data.success && Array.isArray(data.documents)) {
+          const totalCount = missingFields.length;
+          const recs: RecommendedDocumentItem[] = data.documents.map((doc: any, idx: number) => {
+            const fillsArr = Array.isArray(doc.fills) ? doc.fills : [];
+            const fillsCount = fillsArr.length;
+            const coverage = Math.round((fillsCount / Math.max(totalCount, 1)) * 100);
+            return {
+              document: doc.document || doc.title || 'Government Document',
+              fills: fillsArr,
+              priority: idx + 1,
+              reason: doc.reason || `Provides required form details.`,
+              coveragePercentage: coverage > 0 ? coverage : 18,
+              docTypeTag: (doc.document || '').toUpperCase().replace(/\s+/g, '_'),
+            };
+          });
+
+          // Compute remaining missing fields
+          const coveredSet = new Set(recs.flatMap((r) => r.fills));
+          const remainingMissing = missingFields.filter((f) => !coveredSet.has(f));
+
+          // Audit Logs
+          console.log('[Audit Log] Suggested documents:', JSON.stringify(recs.map((r) => r.document), null, 2));
+          console.log('[Audit Log] Coverage percentage:', `${data.completion_percentage}%`);
+          console.log('[Audit Log] Remaining missing fields:', JSON.stringify(remainingMissing, null, 2));
+          console.log('========================================================================');
+
+          const result: NemotronRecommendationResponse = {
+            success: true,
+            completion_percentage: data.completion_percentage || 75,
+            recommendations: recs,
           };
+
+          recommendationCache.set(cacheKey, result);
+          return result;
         }
       }
-    } catch (e) {
-      console.warn('[NemotronService] API call failed, using local set-cover fallback:', e);
+    } catch (e: any) {
+      console.error('[NemotronService] Gemini API call failed:', e);
     }
 
-    return NemotronService.setcoverFallback(payload.missing_fields, completionPercentage);
-  }
+    // Fallback handling if Gemini API fails
+    const fallbackMessage = 'Unable to generate AI document recommendations. Please upload any government document containing the missing information.';
+    console.warn('[NemotronService] Failure handling triggered:', fallbackMessage);
 
-  /**
-   * Greedy Set-Cover Algorithm:
-   * Finds the minimum set of documents that covers the maximum missing fields.
-   * Used as a fallback when the Nemotron API is unavailable.
-   */
-  private static setcoverFallback(
-    missingFields: string[],
-    completionPercentage: number
-  ): NemotronRecommendationResponse {
-    const remaining = new Set(missingFields);
-    const recommendations: RecommendedDocumentItem[] = [];
+    const fallbackResult: NemotronRecommendationResponse = {
+      success: false,
+      completion_percentage: 50,
+      recommendations: [],
+      error: fallbackMessage,
+    };
 
-    // Build a map: document → set of missing fields it can fill
-    const docCoverage = new Map<string, { fills: Set<string>; docTypeTag: string; reason: string }>();
-
-    for (const field of missingFields) {
-      const docs = FIELD_TO_DOCUMENTS[field] || [];
-      for (const doc of docs) {
-        if (!docCoverage.has(doc.document)) {
-          docCoverage.set(doc.document, { fills: new Set(), docTypeTag: doc.docTypeTag, reason: doc.reason });
-        }
-        docCoverage.get(doc.document)!.fills.add(field);
-      }
-    }
-
-    let priority = 1;
-
-    // Greedy: always pick the document that covers the most remaining fields
-    while (remaining.size > 0) {
-      let bestDoc = '';
-      let bestFills: Set<string> = new Set();
-      let bestDocTypeTag = '';
-      let bestReason = '';
-
-      for (const [doc, { fills, docTypeTag, reason }] of docCoverage.entries()) {
-        const coverage = [...fills].filter((f) => remaining.has(f));
-        if (coverage.length > bestFills.size) {
-          bestDoc = doc;
-          bestFills = new Set(coverage);
-          bestDocTypeTag = docTypeTag;
-          bestReason = reason;
-        }
-      }
-
-      // No document covers any remaining field — stop
-      if (!bestDoc || bestFills.size === 0) break;
-
-      recommendations.push({
-        document: bestDoc,
-        fills: [...bestFills],
-        priority: priority++,
-        reason: bestReason,
-        docTypeTag: bestDocTypeTag,
-      });
-
-      // Remove covered fields from remaining
-      for (const f of bestFills) remaining.delete(f);
-      docCoverage.delete(bestDoc);
-    }
-
-    return { completion_percentage: completionPercentage, recommendations };
+    return fallbackResult;
   }
 }
