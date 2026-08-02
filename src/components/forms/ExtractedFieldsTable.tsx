@@ -29,8 +29,8 @@ export const ExtractedFieldsTable: React.FC<ExtractedFieldsTableProps> = ({
   onSaveField,
   onConfirmAll,
 }) => {
-  // Requirement 9: Console log rendered fields state
-  console.log('[Audit Log] Rendered fields:', JSON.stringify(fields.map((f) => ({ key: f.key, label: f.label, value: f.value })), null, 2));
+  // Console log rendered dynamic form state
+  console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(fields.map((f) => ({ key: f.key, label: f.label, value: f.value })), null, 2));
 
   const { addToast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);

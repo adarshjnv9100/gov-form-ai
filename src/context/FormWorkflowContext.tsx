@@ -119,6 +119,8 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // ── Target Application Form Detection & Field Extraction ───
 
+  // ── Target Application Form Detection & Field Extraction ───
+
   const selectTargetForm = async (file: UploadedFile): Promise<ExtractedField[]> => {
     setFormFile(file);
 
@@ -126,44 +128,69 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     let docType: 'APPLICATION_FORM' | 'SUPPORTING_DOCUMENT' = 'APPLICATION_FORM';
 
     try {
-      // Extract form structure & fields from uploaded application form via OCR
-      const ocrResult = await OCRService.extractDocumentJSON(file.url);
-      const rawFieldsMap = ocrResult.structured as unknown as Record<string, string>;
+      // Dedicated AI Pipeline: Send ONLY application form image/PDF to Gemini Vision
+      const parsedStructure = await OCRService.parseApplicationFormStructure(file.url);
 
-      // Stage 1: Document Classification
-      docType = CanonicalMappingEngine.classifyDocument(rawFieldsMap, 'APPLICATION_FORM');
+      let detectedFields: ExtractedField[] = [];
 
-      // Stage 2: Parse uploaded form & detect every fillable field label
-      const detectedFields: ExtractedField[] = [];
-      let fieldIdx = 1;
+      if (parsedStructure && parsedStructure.length > 0) {
+        let fieldIdx = 1;
+        detectedFields = parsedStructure.map((item) => {
+          const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(item.label);
+          const canonicalKey = mappingRes.canonicalKey || item.label.toLowerCase().replace(/[\s\-_]+/g, '_');
+          const meta = FIELD_SCHEMA[canonicalKey as CanonicalKey] || {
+            label: item.label,
+            isRequired: item.required,
+            category: 'PERSONAL',
+          };
 
-      // Extract keys that are present / detected in the uploaded form
-      const rawEntries = Object.entries(rawFieldsMap);
-      const activeEntries = rawEntries.filter(([_, val]) => val !== null && val !== undefined);
-      const entriesToProcess = activeEntries.length > 0 ? activeEntries : rawEntries.slice(0, 8);
-
-      entriesToProcess.forEach(([rawKey, _]) => {
-        const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawKey);
-        const canonicalKey = mappingRes.canonicalKey || rawKey;
-        const meta = FIELD_SCHEMA[canonicalKey as CanonicalKey] || {
-          label: rawKey.replace(/_/g, ' ').toUpperCase(),
-          isRequired: true,
-          category: 'PERSONAL'
-        };
-
-        detectedFields.push({
-          id: `form_field_${canonicalKey}_${fieldIdx++}`,
-          key: canonicalKey,
-          label: meta.label,
-          value: '', // Values left blank for application form
-          confidence: 0,
-          isMissing: true,
-          isLowConfidence: false,
-          isRequired: meta.isRequired,
-          category: meta.category,
-          source: 'FORM_DETECTED',
+          return {
+            id: `detected_field_${canonicalKey}_${fieldIdx++}`,
+            key: canonicalKey,
+            label: item.label,
+            value: '', // Values left blank for application form
+            confidence: 0,
+            isMissing: true,
+            isLowConfidence: false,
+            isRequired: item.required !== false,
+            category: meta.category,
+            source: 'FORM_DETECTED',
+          };
         });
-      });
+      } else {
+        // Fallback parsing via standard OCR if vision route returned empty
+        const ocrResult = await OCRService.extractDocumentJSON(file.url);
+        const rawFieldsMap = ocrResult.structured as unknown as Record<string, string>;
+        docType = CanonicalMappingEngine.classifyDocument(rawFieldsMap, 'APPLICATION_FORM');
+
+        const rawEntries = Object.entries(rawFieldsMap);
+        const activeEntries = rawEntries.filter(([_, val]) => val !== null && val !== undefined);
+        const entriesToProcess = activeEntries.length > 0 ? activeEntries : rawEntries.slice(0, 8);
+
+        let fieldIdx = 1;
+        detectedFields = entriesToProcess.map(([rawKey, _]) => {
+          const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawKey);
+          const canonicalKey = mappingRes.canonicalKey || rawKey;
+          const meta = FIELD_SCHEMA[canonicalKey as CanonicalKey] || {
+            label: rawKey.replace(/_/g, ' ').toUpperCase(),
+            isRequired: true,
+            category: 'PERSONAL',
+          };
+
+          return {
+            id: `form_field_${canonicalKey}_${fieldIdx++}`,
+            key: canonicalKey,
+            label: meta.label,
+            value: '',
+            confidence: 0,
+            isMissing: true,
+            isLowConfidence: false,
+            isRequired: meta.isRequired,
+            category: meta.category,
+            source: 'FORM_DETECTED',
+          };
+        });
+      }
 
       extracted = detectedFields;
     } catch (e) {
@@ -171,13 +198,13 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
       extracted = buildInitialFieldsWithMasterProfile(profile);
     }
 
-    // Required Debug Logs (Requirement 9)
-    console.log('==================== DEBUG LOGS: APPLICATION FORM PARSED ====================');
-    console.log('[Audit Log] Detected document type:', docType);
-    console.log('[Audit Log] Detected form fields:', JSON.stringify(extracted.map((f) => f.label), null, 2));
+    // Required Debug Logs
+    console.log('==================== DEDICATED APPLICATION FORM VISION PIPELINE ====================');
+    console.log('[Audit Log] Detected Form Template:', JSON.stringify(extracted.map((f) => ({ label: f.label, required: f.isRequired })), null, 2));
+    console.log('[Audit Log] Detected Labels:', JSON.stringify(extracted.map((f) => f.label), null, 2));
     console.log('[Audit Log] Canonical fields:', JSON.stringify(extracted.map((f) => f.key), null, 2));
-    console.log('[Audit Log] Rendered fields:', JSON.stringify(extracted.map((f) => ({ key: f.key, label: f.label })), null, 2));
-    console.log('=============================================================================');
+    console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(extracted.map((f) => ({ key: f.key, label: f.label, value: f.value })), null, 2));
+    console.log('====================================================================================');
 
     setExtractedFields(extracted);
     return extracted;
@@ -240,79 +267,32 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     let successfulNormalizationsCount = 0;
 
     const docType = CanonicalMappingEngine.classifyDocument(newFieldsMap, 'SUPPORTING_DOCUMENT');
-    const updatedList: ExtractedField[] = [...extractedFields];
+    const targetTemplate: ExtractedField[] = [...extractedFields];
 
-    if (updatedList.length === 0) {
-      updatedList.push(...buildInitialFieldsWithMasterProfile(profile));
+    if (targetTemplate.length === 0) {
+      targetTemplate.push(...buildInitialFieldsWithMasterProfile(profile));
     }
 
-    const mappedFieldsLog: any[] = [];
+    // Stage 4 Semantic Mapping to detectedFormTemplate
+    const { updatedTemplate, semanticMatches } = CanonicalMappingEngine.mapValuesToDetectedTemplate(
+      newFieldsMap,
+      targetTemplate
+    );
 
-    // Semantic Mapping: Map OCR values to detected form fields
-    Object.entries(newFieldsMap).forEach(([rawOcrKey, ocrValue]) => {
-      const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
-      const targetKey = mappingRes.canonicalKey || (rawOcrKey in DEFAULT_CANONICAL_SCHEMA_KEYS ? rawOcrKey : null);
-      
-      if (!targetKey) return;
+    updatedCount = semanticMatches.length;
+    successfulNormalizationsCount = semanticMatches.length;
 
-      const targetIndex = updatedList.findIndex(
-        (f) => f.key === targetKey || f.label.toLowerCase().includes(rawOcrKey.toLowerCase())
-      );
-      if (targetIndex === -1) return;
-
-      const existingField = updatedList[targetIndex];
-
-      mappedFieldsLog.push({
-        ocrSourceKey: rawOcrKey,
-        targetFormLabel: existingField.label,
-        canonicalKey: targetKey,
-        matchType: mappingRes.matchType,
-        confidence: `${mappingRes.confidence}%`,
-        extractedValue: ocrValue,
-      });
-
-      if (existingField.isEdited) return;
-
-      const hasOcrVal = ocrValue !== null && ocrValue !== undefined && typeof ocrValue === 'string' && ocrValue.trim() !== '' && ocrValue.trim().toLowerCase() !== 'null';
-
-      if (hasOcrVal) {
-        successfulNormalizationsCount++;
-        const rawVal = ocrValue.trim();
-        const { value: validatedVal, confidence: newConfidence } = validateField(
-          targetKey as CanonicalKey,
-          rawVal
-        );
-
-        if (validatedVal && validatedVal.trim()) {
-          const isCurrentFromProfileOrDefault = existingField.source === 'PROFILE' || existingField.source === 'DEFAULT' || !existingField.value;
-          const isHigherConfidence = newConfidence >= (existingField.confidence || 0);
-
-          if (isCurrentFromProfileOrDefault || isHigherConfidence) {
-            updatedCount++;
-            updatedList[targetIndex] = {
-              ...existingField,
-              value:           validatedVal.trim(),
-              confidence:      newConfidence || 95,
-              isMissing:       false,
-              isLowConfidence: (newConfidence || 95) < 85,
-              source:          'OCR',
-            };
-          }
-        }
-      }
-    });
-
-    // Required Debug Logs (Requirement 9)
-    console.log('==================== DEBUG LOGS: SEMANTIC MAPPING ====================');
+    // Required Debug Logs
+    console.log('==================== SEMANTIC MAPPING TO DETECTED FORM TEMPLATE ====================');
     console.log('[Audit Log] Detected document type:', docType);
     console.log('[Audit Log] Extracted OCR values:', JSON.stringify(newFieldsMap, null, 2));
-    console.log('[Audit Log] Mapped fields:', JSON.stringify(mappedFieldsLog, null, 2));
-    console.log('[Audit Log] Rendered fields:', JSON.stringify(updatedList.map((f) => ({ label: f.label, value: f.value })), null, 2));
-    console.log('======================================================================');
+    console.log('[Audit Log] Semantic Matches:', JSON.stringify(semanticMatches, null, 2));
+    console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(updatedTemplate.map((f) => ({ label: f.label, value: f.value })), null, 2));
+    console.log('===================================================================================');
 
-    setExtractedFields(updatedList);
+    setExtractedFields(updatedTemplate);
 
-    return { mergedFields: updatedList, updatedCount, successfulNormalizationsCount };
+    return { mergedFields: updatedTemplate, updatedCount, successfulNormalizationsCount };
   };
 
   // Helper set for canonical keys validation

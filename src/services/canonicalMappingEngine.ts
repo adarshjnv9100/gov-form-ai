@@ -12,6 +12,7 @@
 // ============================================================
 
 import { CANONICAL_SYNONYMS, CanonicalKey } from './ocrService';
+import { ExtractedField } from '../types';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -317,5 +318,106 @@ export class CanonicalMappingEngine {
 
     // ── 7. Unmapped ───────────────────────────────────────
     return { rawKey: cleanRaw, normalizedKey, canonicalKey: null, confidence: 0, matchType: 'UNMAPPED', needsReview: false };
+  }
+
+  /**
+   * Stage 4: Maps OCR values to detected application form template field labels using semantic matching.
+   * Semantic Examples:
+   *   Full Name -> Student Name
+   *   Father Name -> Parent Name
+   *   Mobile Number -> Parent Phone
+   *   Email -> Parent Email
+   *   Address -> Address
+   */
+  public static mapValuesToDetectedTemplate(
+    ocrValuesMap: Record<string, string>,
+    targetTemplate: ExtractedField[]
+  ): { updatedTemplate: ExtractedField[]; semanticMatches: any[] } {
+    const updatedTemplate: ExtractedField[] = [...targetTemplate];
+    const semanticMatches: any[] = [];
+
+    Object.entries(ocrValuesMap).forEach(([rawOcrKey, ocrValue]) => {
+      if (!ocrValue || typeof ocrValue !== 'string' || !ocrValue.trim() || ocrValue.trim().toLowerCase() === 'null') {
+        return;
+      }
+
+      const val = ocrValue.trim();
+      const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
+      const canonicalKey = mappingRes.canonicalKey;
+
+      let bestMatchIdx = -1;
+      let highestScore = 0;
+      let matchReason = '';
+
+      updatedTemplate.forEach((field, idx) => {
+        if (field.isEdited) return;
+
+        const targetLabelLower = field.label.toLowerCase();
+        const targetKeyLower = field.key.toLowerCase();
+        const cleanOcrKeyLower = rawOcrKey.toLowerCase();
+
+        let score = 0;
+
+        // 1. Direct label or key match
+        if (targetKeyLower === canonicalKey || targetLabelLower === cleanOcrKeyLower) {
+          score = 0.99;
+          matchReason = 'EXACT';
+        }
+        // 2. Semantic Synonym Rules
+        else if (canonicalKey === 'full_name' && (targetLabelLower.includes('student') || targetLabelLower.includes('schooler') || targetLabelLower.includes('applicant') || targetLabelLower.includes('name') || targetLabelLower.includes('member'))) {
+          score = 0.96;
+          matchReason = 'SEMANTIC_SYNONYM (Full Name -> Student Name)';
+        } else if (canonicalKey === 'father_name' && (targetLabelLower.includes('parent') || targetLabelLower.includes('father') || targetLabelLower.includes('guardian'))) {
+          score = 0.96;
+          matchReason = 'SEMANTIC_SYNONYM (Father Name -> Parent Name)';
+        } else if (canonicalKey === 'mobile_number' && (targetLabelLower.includes('phone') || targetLabelLower.includes('mobile') || targetLabelLower.includes('contact') || targetLabelLower.includes('cell'))) {
+          score = 0.96;
+          matchReason = 'SEMANTIC_SYNONYM (Mobile Number -> Parent Phone)';
+        } else if (canonicalKey === 'email' && (targetLabelLower.includes('email') || targetLabelLower.includes('e-mail'))) {
+          score = 0.96;
+          matchReason = 'SEMANTIC_SYNONYM (Email -> Parent Email)';
+        } else if (canonicalKey === 'address' && (targetLabelLower.includes('address') || targetLabelLower.includes('residence'))) {
+          score = 0.96;
+          matchReason = 'SEMANTIC_SYNONYM (Address -> Address)';
+        }
+        // 3. Fuzzy similarity
+        else {
+          const jw = jaroWinklerSimilarity(normalizeKeyString(field.label), normalizeKeyString(rawOcrKey));
+          if (jw > score) {
+            score = jw;
+            matchReason = `FUZZY_MATCH (${Math.round(jw * 100)}%)`;
+          }
+        }
+
+        if (score > highestScore && score >= 0.6) {
+          highestScore = score;
+          bestMatchIdx = idx;
+        }
+      });
+
+      if (bestMatchIdx !== -1) {
+        const matchedField = updatedTemplate[bestMatchIdx];
+        semanticMatches.push({
+          sourceOcrKey: rawOcrKey,
+          targetFormLabel: matchedField.label,
+          targetFormKey: matchedField.key,
+          canonicalKey: canonicalKey || 'CUSTOM',
+          extractedValue: val,
+          matchType: matchReason,
+          confidenceScore: `${Math.round(highestScore * 100)}%`,
+        });
+
+        updatedTemplate[bestMatchIdx] = {
+          ...matchedField,
+          value: val,
+          confidence: Math.round(highestScore * 100),
+          isMissing: false,
+          isLowConfidence: Math.round(highestScore * 100) < 85,
+          source: 'OCR',
+        };
+      }
+    });
+
+    return { updatedTemplate, semanticMatches };
   }
 }

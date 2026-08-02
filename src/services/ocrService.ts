@@ -657,4 +657,30 @@ export class OCRService {
       overallConfidence: 0,
     };
   }
+
+  /**
+   * Dedicated AI Pipeline: Sends ONLY the uploaded APPLICATION_FORM image/PDF to Gemini Vision
+   * to extract all fillable field labels and required status without values.
+   */
+  public static async parseApplicationFormStructure(
+    documentUrl: string
+  ): Promise<Array<{ label: string; required: boolean }>> {
+    try {
+      const response = await fetch('/api/parse-form', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentUrl }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.template)) {
+          return data.template;
+        }
+      }
+    } catch (e) {
+      console.warn('[OCRService] Call to /api/parse-form failed, using OCR fallback:', e);
+    }
+    return [];
+  }
 }
