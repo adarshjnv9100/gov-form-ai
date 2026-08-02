@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { FormWorkflowProvider } from './context/FormWorkflowContext';
 import { ToastProvider } from './context/ToastContext';
 import { ToastNotificationContainer } from './components/ui/ToastNotification';
+import { VoiceAssistant } from './components/VoiceAssistant';
 
 // Public pages
 import { LandingPage } from './pages/LandingPage';
@@ -60,6 +61,7 @@ export function App() {
             </Routes>
 
             <ToastNotificationContainer />
+            <VoiceAssistant />
           </FormWorkflowProvider>
         </AuthProvider>
       </ToastProvider>
