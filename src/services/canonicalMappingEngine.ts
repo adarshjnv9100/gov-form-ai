@@ -321,103 +321,217 @@ export class CanonicalMappingEngine {
   }
 
   /**
-   * Stage 4: Maps OCR values to detected application form template field labels using semantic matching.
-   * Semantic Examples:
-   *   Full Name -> Student Name
-   *   Father Name -> Parent Name
-   *   Mobile Number -> Parent Phone
-   *   Email -> Parent Email
-   *   Address -> Address
+   * Type Safety Guardrails: Rejects mismatched cross-category mappings.
+   * Never map Phone/Email/DOB/Address/School Name -> Person Name, etc.
    */
-  public static mapValuesToDetectedTemplate(
+  public static isTypeIncompatible(
+    rawOcrKey: string,
+    ocrValue: string,
+    targetLabel: string
+  ): { incompatible: boolean; reason?: string } {
+    const ocrLower = rawOcrKey.toLowerCase();
+    const targetLower = targetLabel.toLowerCase();
+    const valLower = ocrValue.toLowerCase();
+
+    // 1. Phone / Mobile vs Name / DOB / Address
+    const isPhone = ocrLower.includes('phone') || ocrLower.includes('mobile') || ocrLower.includes('contact') || /^\+?\d{10,12}$/.test(ocrValue.replace(/[\s\-]/g, ''));
+    if (isPhone && (targetLower.includes('father') || targetLower.includes('parent name') || targetLower.includes('student name') || targetLower.includes('applicant name') || targetLower.includes('dob') || targetLower.includes('date of birth'))) {
+      if (!targetLower.includes('phone') && !targetLower.includes('mobile') && !targetLower.includes('contact')) {
+        return { incompatible: true, reason: 'Forbidden cross-category mapping: Phone number cannot map to Name or DOB field' };
+      }
+    }
+
+    // 2. Email vs Name / Phone / DOB / Address
+    const isEmail = ocrLower.includes('email') || valLower.includes('@');
+    if (isEmail && (targetLower.includes('father') || targetLower.includes('parent name') || targetLower.includes('student name') || targetLower.includes('phone') || targetLower.includes('dob'))) {
+      if (!targetLower.includes('email') && !targetLower.includes('e-mail')) {
+        return { incompatible: true, reason: 'Forbidden cross-category mapping: Email cannot map to Name or Phone or DOB field' };
+      }
+    }
+
+    // 3. DOB / Date vs Name / Phone / Email / Address
+    const isDate = ocrLower.includes('dob') || ocrLower.includes('date_of_birth') || ocrLower.includes('birth_date');
+    if (isDate && (targetLower.includes('name') || targetLower.includes('phone') || targetLower.includes('email') || targetLower.includes('address'))) {
+      if (!targetLower.includes('dob') && !targetLower.includes('date of birth') && !targetLower.includes('birth')) {
+        return { incompatible: true, reason: 'Forbidden cross-category mapping: Date of Birth cannot map to Name, Phone, or Email field' };
+      }
+    }
+
+    // 4. Address vs Name / Phone / Email
+    const isAddress = ocrLower.includes('address') || ocrLower.includes('residence');
+    if (isAddress && (targetLower.includes('name') || targetLower.includes('phone') || targetLower.includes('email'))) {
+      if (!targetLower.includes('address') && !targetLower.includes('residence')) {
+        return { incompatible: true, reason: 'Forbidden cross-category mapping: Address cannot map to Person Name, Phone, or Email field' };
+      }
+    }
+
+    // 5. School Name / Institution / Bank Name vs Person Full Name / Father Name
+    const isInstitution = ocrLower.includes('school') || ocrLower.includes('college') || ocrLower.includes('university') || ocrLower.includes('bank_name');
+    if (isInstitution && (targetLower.includes('student name') || targetLower.includes('full name') || targetLower.includes('father name') || targetLower.includes('parent name') || targetLower.includes('applicant name'))) {
+      if (!targetLower.includes('school') && !targetLower.includes('college') && !targetLower.includes('bank')) {
+        return { incompatible: true, reason: 'Forbidden cross-category mapping: School/Institution/Bank name cannot map to Person Name field' };
+      }
+    }
+
+    return { incompatible: false };
+  }
+
+  /**
+   * Calls Gemini AI Decision Engine (/api/verify-semantic-map) to verify semantic equivalence.
+   */
+  public static async verifySemanticEquivalenceWithGemini(
+    ocrField: string,
+    ocrValue: string,
+    formLabel: string
+  ): Promise<{ match: boolean; confidence: number; reason: string }> {
+    try {
+      const response = await fetch('/api/verify-semantic-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ocrField, ocrValue, formLabel }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.success) {
+          return {
+            match: Boolean(data.match),
+            confidence: typeof data.confidence === 'number' ? data.confidence : (data.match ? 90 : 20),
+            reason: String(data.reason || ''),
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[CanonicalMappingEngine] Call to /api/verify-semantic-map failed:', e);
+    }
+    return { match: false, confidence: 0, reason: 'API call failed or unavailable' };
+  }
+
+  /**
+   * Stage 4: Maps OCR values to detected application form template field labels using strict semantic verification.
+   * Rules:
+   *   1. Minimum 80% similarity threshold (below 80% -> DO NOT map).
+   *   2. Type safety checks (reject Phone -> Father Name, Email -> Father Name, DOB -> Parent Name, etc.).
+   *   3. Gemini AI decision engine verification (only map when match == true AND confidence >= 85%).
+   *   4. Default blank state if no confident match exists.
+   */
+  public static async mapValuesToDetectedTemplate(
     ocrValuesMap: Record<string, string>,
     targetTemplate: ExtractedField[]
-  ): { updatedTemplate: ExtractedField[]; semanticMatches: any[] } {
+  ): Promise<{
+    updatedTemplate: ExtractedField[];
+    acceptedMappings: any[];
+    rejectedMappings: any[];
+  }> {
     const updatedTemplate: ExtractedField[] = [...targetTemplate];
-    const semanticMatches: any[] = [];
+    const acceptedMappings: any[] = [];
+    const rejectedMappings: any[] = [];
 
-    Object.entries(ocrValuesMap).forEach(([rawOcrKey, ocrValue]) => {
+    const ocrEntries = Object.entries(ocrValuesMap);
+
+    for (const [rawOcrKey, ocrValue] of ocrEntries) {
       if (!ocrValue || typeof ocrValue !== 'string' || !ocrValue.trim() || ocrValue.trim().toLowerCase() === 'null') {
-        return;
+        continue;
       }
 
       const val = ocrValue.trim();
       const mappingRes = CanonicalMappingEngine.mapOCRFieldKey(rawOcrKey);
       const canonicalKey = mappingRes.canonicalKey;
 
-      let bestMatchIdx = -1;
-      let highestScore = 0;
-      let matchReason = '';
-
-      updatedTemplate.forEach((field, idx) => {
-        if (field.isEdited) return;
+      for (let idx = 0; idx < updatedTemplate.length; idx++) {
+        const field = updatedTemplate[idx];
+        if (field.isEdited) continue;
 
         const targetLabelLower = field.label.toLowerCase();
         const targetKeyLower = field.key.toLowerCase();
         const cleanOcrKeyLower = rawOcrKey.toLowerCase();
 
-        let score = 0;
+        // Calculate string similarity score
+        let similarityScore = 0;
 
-        // 1. Direct label or key match
         if (targetKeyLower === canonicalKey || targetLabelLower === cleanOcrKeyLower) {
-          score = 0.99;
-          matchReason = 'EXACT';
-        }
-        // 2. Semantic Synonym Rules
-        else if (canonicalKey === 'full_name' && (targetLabelLower.includes('student') || targetLabelLower.includes('schooler') || targetLabelLower.includes('applicant') || targetLabelLower.includes('name') || targetLabelLower.includes('member'))) {
-          score = 0.96;
-          matchReason = 'SEMANTIC_SYNONYM (Full Name -> Student Name)';
-        } else if (canonicalKey === 'father_name' && (targetLabelLower.includes('parent') || targetLabelLower.includes('father') || targetLabelLower.includes('guardian'))) {
-          score = 0.96;
-          matchReason = 'SEMANTIC_SYNONYM (Father Name -> Parent Name)';
-        } else if (canonicalKey === 'mobile_number' && (targetLabelLower.includes('phone') || targetLabelLower.includes('mobile') || targetLabelLower.includes('contact') || targetLabelLower.includes('cell'))) {
-          score = 0.96;
-          matchReason = 'SEMANTIC_SYNONYM (Mobile Number -> Parent Phone)';
-        } else if (canonicalKey === 'email' && (targetLabelLower.includes('email') || targetLabelLower.includes('e-mail'))) {
-          score = 0.96;
-          matchReason = 'SEMANTIC_SYNONYM (Email -> Parent Email)';
-        } else if (canonicalKey === 'address' && (targetLabelLower.includes('address') || targetLabelLower.includes('residence'))) {
-          score = 0.96;
-          matchReason = 'SEMANTIC_SYNONYM (Address -> Address)';
-        }
-        // 3. Fuzzy similarity
-        else {
-          const jw = jaroWinklerSimilarity(normalizeKeyString(field.label), normalizeKeyString(rawOcrKey));
-          if (jw > score) {
-            score = jw;
-            matchReason = `FUZZY_MATCH (${Math.round(jw * 100)}%)`;
-          }
+          similarityScore = 0.99;
+        } else if (canonicalKey === 'full_name' && (targetLabelLower.includes('student name') || targetLabelLower.includes('schooler name') || targetLabelLower.includes('applicant name') || targetLabelLower.includes('member name'))) {
+          similarityScore = 0.95;
+        } else if (canonicalKey === 'father_name' && (targetLabelLower.includes('parent name') || targetLabelLower.includes('father name') || targetLabelLower.includes('guardian name'))) {
+          similarityScore = 0.95;
+        } else if (canonicalKey === 'mobile_number' && (targetLabelLower.includes('parent phone') || targetLabelLower.includes('mobile number') || targetLabelLower.includes('contact phone') || targetLabelLower.includes('phone number'))) {
+          similarityScore = 0.95;
+        } else if (canonicalKey === 'email' && (targetLabelLower.includes('parent email') || targetLabelLower.includes('email address') || targetLabelLower.includes('e-mail'))) {
+          similarityScore = 0.95;
+        } else if (canonicalKey === 'address' && (targetLabelLower.includes('residential address') || targetLabelLower.includes('permanent address') || targetLabelLower.includes('address'))) {
+          similarityScore = 0.95;
+        } else {
+          similarityScore = jaroWinklerSimilarity(normalizeKeyString(field.label), normalizeKeyString(rawOcrKey));
         }
 
-        if (score > highestScore && score >= 0.6) {
-          highestScore = score;
-          bestMatchIdx = idx;
+        // Rule 1: Below 80% similarity threshold -> DO NOT map automatically
+        if (similarityScore < 0.80) {
+          rejectedMappings.push({
+            ocrField: rawOcrKey,
+            ocrValue: val,
+            formLabel: field.label,
+            similarityScore: `${Math.round(similarityScore * 100)}%`,
+            geminiConfidence: 'N/A (Skipped due to low similarity)',
+            reasonForRejection: 'Below 80% semantic similarity threshold',
+          });
+          continue;
         }
-      });
 
-      if (bestMatchIdx !== -1) {
-        const matchedField = updatedTemplate[bestMatchIdx];
-        semanticMatches.push({
-          sourceOcrKey: rawOcrKey,
-          targetFormLabel: matchedField.label,
-          targetFormKey: matchedField.key,
-          canonicalKey: canonicalKey || 'CUSTOM',
-          extractedValue: val,
-          matchType: matchReason,
-          confidenceScore: `${Math.round(highestScore * 100)}%`,
-        });
+        // Rule 2: Hard Type Safety Guardrails
+        const typeCheck = CanonicalMappingEngine.isTypeIncompatible(rawOcrKey, val, field.label);
+        if (typeCheck.incompatible) {
+          rejectedMappings.push({
+            ocrField: rawOcrKey,
+            ocrValue: val,
+            formLabel: field.label,
+            similarityScore: `${Math.round(similarityScore * 100)}%`,
+            geminiConfidence: 'N/A (Type incompatible)',
+            reasonForRejection: typeCheck.reason || 'Forbidden cross-category mapping',
+          });
+          continue;
+        }
 
-        updatedTemplate[bestMatchIdx] = {
-          ...matchedField,
-          value: val,
-          confidence: Math.round(highestScore * 100),
-          isMissing: false,
-          isLowConfidence: Math.round(highestScore * 100) < 85,
-          source: 'OCR',
-        };
+        // Rule 3: Query Gemini AI Decision Engine for Semantic Equivalence Verification
+        const geminiVerification = await CanonicalMappingEngine.verifySemanticEquivalenceWithGemini(
+          rawOcrKey,
+          val,
+          field.label
+        );
+
+        // Rule 4: Auto-map ONLY when match === true AND confidence >= 85%
+        if (geminiVerification.match && geminiVerification.confidence >= 85) {
+          acceptedMappings.push({
+            ocrField: rawOcrKey,
+            ocrValue: val,
+            formLabel: field.label,
+            similarityScore: `${Math.round(similarityScore * 100)}%`,
+            geminiConfidence: `${geminiVerification.confidence}%`,
+            matchReason: geminiVerification.reason || 'Gemini verified semantic equivalence',
+          });
+
+          updatedTemplate[idx] = {
+            ...field,
+            value: val,
+            confidence: geminiVerification.confidence,
+            isMissing: false,
+            isLowConfidence: geminiVerification.confidence < 85,
+            source: 'OCR',
+          };
+          break; // Stop evaluating other fields for this OCR entry
+        } else {
+          rejectedMappings.push({
+            ocrField: rawOcrKey,
+            ocrValue: val,
+            formLabel: field.label,
+            similarityScore: `${Math.round(similarityScore * 100)}%`,
+            geminiConfidence: `${geminiVerification.confidence}%`,
+            reasonForRejection: geminiVerification.reason || 'Gemini confidence < 85% or semantic mismatch',
+          });
+        }
       }
-    });
+    }
 
-    return { updatedTemplate, semanticMatches };
+    return { updatedTemplate, acceptedMappings, rejectedMappings };
   }
 }

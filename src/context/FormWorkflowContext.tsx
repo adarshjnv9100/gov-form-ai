@@ -263,9 +263,6 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     rawOcrText?: string
   ): Promise<{ mergedFields: ExtractedField[]; updatedCount: number; successfulNormalizationsCount: number }> => {
 
-    let updatedCount = 0;
-    let successfulNormalizationsCount = 0;
-
     const docType = CanonicalMappingEngine.classifyDocument(newFieldsMap, 'SUPPORTING_DOCUMENT');
     const targetTemplate: ExtractedField[] = [...extractedFields];
 
@@ -273,22 +270,23 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
       targetTemplate.push(...buildInitialFieldsWithMasterProfile(profile));
     }
 
-    // Stage 4 Semantic Mapping to detectedFormTemplate
-    const { updatedTemplate, semanticMatches } = CanonicalMappingEngine.mapValuesToDetectedTemplate(
+    // Stage 4: Async Gemini Semantic Equivalence Verification & Threshold Check
+    const { updatedTemplate, acceptedMappings, rejectedMappings } = await CanonicalMappingEngine.mapValuesToDetectedTemplate(
       newFieldsMap,
       targetTemplate
     );
 
-    updatedCount = semanticMatches.length;
-    successfulNormalizationsCount = semanticMatches.length;
+    const updatedCount = acceptedMappings.length;
+    const successfulNormalizationsCount = acceptedMappings.length;
 
-    // Required Debug Logs
-    console.log('==================== SEMANTIC MAPPING TO DETECTED FORM TEMPLATE ====================');
+    // Required Audit Logs (Requirement 6)
+    console.log('==================== GEMINI AI SEMANTIC VERIFICATION LOGS ====================');
     console.log('[Audit Log] Detected document type:', docType);
     console.log('[Audit Log] Extracted OCR values:', JSON.stringify(newFieldsMap, null, 2));
-    console.log('[Audit Log] Semantic Matches:', JSON.stringify(semanticMatches, null, 2));
+    console.log('[Audit Log] Accepted mappings:', JSON.stringify(acceptedMappings, null, 2));
+    console.log('[Audit Log] Rejected mappings:', JSON.stringify(rejectedMappings, null, 2));
     console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(updatedTemplate.map((f) => ({ label: f.label, value: f.value })), null, 2));
-    console.log('===================================================================================');
+    console.log('=============================================================================');
 
     setExtractedFields(updatedTemplate);
 
