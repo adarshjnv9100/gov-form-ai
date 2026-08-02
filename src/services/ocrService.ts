@@ -13,6 +13,7 @@ export interface CanonicalSchema {
   full_name: string;
   father_name: string;
   mother_name: string;
+  student_name: string;
   date_of_birth: string;
   gender: string;
   marital_status: string;
@@ -22,7 +23,13 @@ export interface CanonicalSchema {
   driving_license_number: string;
   voter_id: string;
   mobile_number: string;
+  student_mobile: string;
+  father_mobile: string;
+  mother_mobile: string;
   email: string;
+  student_email: string;
+  father_email: string;
+  mother_email: string;
   address: string;
   city: string;
   district: string;
@@ -35,6 +42,9 @@ export interface CanonicalSchema {
   branch_name: string;
   annual_income: string;
   occupation: string;
+  student_occupation: string;
+  father_occupation: string;
+  mother_occupation: string;
   emergency_contact: string;
 }
 
@@ -52,6 +62,7 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
   full_name:             { label: 'Full Legal Name',               isRequired: true,  category: 'PERSONAL' },
   father_name:           { label: 'Father / Husband Name',         isRequired: true,  category: 'PERSONAL' },
   mother_name:           { label: 'Mother Name',                   isRequired: false, category: 'PERSONAL' },
+  student_name:          { label: "Student's Name",                isRequired: true,  category: 'PERSONAL' },
   date_of_birth:         { label: 'Date of Birth (DD/MM/YYYY)',    isRequired: true,  category: 'PERSONAL' },
   gender:                { label: 'Gender',                        isRequired: true,  category: 'PERSONAL' },
   marital_status:        { label: 'Marital Status',                isRequired: false, category: 'PERSONAL' },
@@ -61,7 +72,13 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
   driving_license_number:{ label: 'Driving License Number',        isRequired: false, category: 'IDENTIFICATION' },
   voter_id:              { label: 'Voter ID (EPIC Number)',         isRequired: false, category: 'IDENTIFICATION' },
   mobile_number:         { label: 'Mobile Phone Number',           isRequired: true,  category: 'PERSONAL' },
+  student_mobile:        { label: 'Student Mobile Number',         isRequired: false, category: 'PERSONAL' },
+  father_mobile:         { label: 'Father Mobile Number',          isRequired: false, category: 'PERSONAL' },
+  mother_mobile:         { label: 'Mother Mobile Number',          isRequired: false, category: 'PERSONAL' },
   email:                 { label: 'Email Address',                 isRequired: true,  category: 'PERSONAL' },
+  student_email:         { label: 'Student Email ID',              isRequired: false, category: 'PERSONAL' },
+  father_email:          { label: 'Father Email ID',               isRequired: false, category: 'PERSONAL' },
+  mother_email:          { label: 'Mother Email ID',               isRequired: false, category: 'PERSONAL' },
   address:               { label: 'Permanent Residential Address', isRequired: true,  category: 'ADDRESS' },
   city:                  { label: 'City / Town',                   isRequired: true,  category: 'ADDRESS' },
   district:              { label: 'District',                      isRequired: false, category: 'ADDRESS' },
@@ -74,6 +91,9 @@ export const FIELD_SCHEMA: Record<CanonicalKey, FieldMeta> = {
   branch_name:           { label: 'Bank Branch Name',             isRequired: false, category: 'FINANCIAL' },
   annual_income:         { label: 'Annual Family Income',          isRequired: true,  category: 'EMPLOYMENT' },
   occupation:            { label: 'Occupation / Profession',       isRequired: true,  category: 'EMPLOYMENT' },
+  student_occupation:    { label: 'Student Occupation',            isRequired: false, category: 'EMPLOYMENT' },
+  father_occupation:     { label: 'Father Occupation',             isRequired: false, category: 'EMPLOYMENT' },
+  mother_occupation:     { label: 'Mother Occupation',             isRequired: false, category: 'EMPLOYMENT' },
   emergency_contact:     { label: 'Emergency Contact Number',      isRequired: true,  category: 'PERSONAL' },
 };
 
@@ -240,6 +260,28 @@ export const CANONICAL_SYNONYMS: Record<string, CanonicalKey> = {
   'tel no':               'mobile_number',
   'mobile phone':         'mobile_number',
 
+  student_mobile:         'student_mobile',
+  'student mobile':       'student_mobile',
+  "student's mobile":     'student_mobile',
+  'student phone':        'student_mobile',
+  "student's phone":      'student_mobile',
+
+  father_mobile:          'father_mobile',
+  'father mobile':        'father_mobile',
+  "father's mobile":      'father_mobile',
+  'father phone':         'father_mobile',
+  "father's phone":      'father_mobile',
+  parent_mobile:          'father_mobile',
+  'parent mobile':        'father_mobile',
+  parent_phone:           'father_mobile',
+  'parent phone':         'father_mobile',
+  "parent's phone":      'father_mobile',
+
+  mother_mobile:          'mother_mobile',
+  'mother mobile':        'mother_mobile',
+  "mother's mobile":      'mother_mobile',
+  'mother phone':         'mother_mobile',
+
   // ── Email ──────────────────────────────────────────────
   email:                  'email',
   email_address:          'email',
@@ -249,6 +291,23 @@ export const CANONICAL_SYNONYMS: Record<string, CanonicalKey> = {
   'e-mail id':            'email',
   'e-mail address':       'email',
   electronic_mail:        'email',
+
+  student_email:          'student_email',
+  'student email':        'student_email',
+  "student's email":     'student_email',
+  'student email id':     'student_email',
+
+  father_email:           'father_email',
+  'father email':         'father_email',
+  "father's email":      'father_email',
+  parent_email:           'father_email',
+  'parent email':         'father_email',
+  "parent's email":      'father_email',
+  'parent email id':      'father_email',
+
+  mother_email:           'mother_email',
+  'mother email':         'mother_email',
+  "mother's email":      'mother_email',
 
   // ── Address ────────────────────────────────────────────
   address:                'address',

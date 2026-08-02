@@ -255,7 +255,7 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
   };
 
-  // ── Stage 3: Semantic Mapping & Priority Merge Engine ─────
+  // ── Direct Canonical Mapping & Priority Merge Engine ─────
 
   const mergeExtractedFieldsMap = async (
     newFieldsMap: Record<string, string>,
@@ -270,23 +270,22 @@ export const FormWorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ 
       targetTemplate.push(...buildInitialFieldsWithMasterProfile(profile));
     }
 
-    // Stage 4: Async Gemini Semantic Equivalence Verification & Threshold Check
-    const { updatedTemplate, acceptedMappings, rejectedMappings } = await CanonicalMappingEngine.mapValuesToDetectedTemplate(
+    // Direct Deterministic Canonical Mapping
+    const { updatedTemplate, directMappings } = CanonicalMappingEngine.mapValuesToDetectedTemplate(
       newFieldsMap,
       targetTemplate
     );
 
-    const updatedCount = acceptedMappings.length;
-    const successfulNormalizationsCount = acceptedMappings.length;
+    const updatedCount = directMappings.length;
+    const successfulNormalizationsCount = directMappings.length;
 
-    // Required Audit Logs (Requirement 6)
-    console.log('==================== GEMINI AI SEMANTIC VERIFICATION LOGS ====================');
+    // Audit Logs
+    console.log('==================== DIRECT CANONICAL MAPPING LOGS ====================');
     console.log('[Audit Log] Detected document type:', docType);
     console.log('[Audit Log] Extracted OCR values:', JSON.stringify(newFieldsMap, null, 2));
-    console.log('[Audit Log] Accepted mappings:', JSON.stringify(acceptedMappings, null, 2));
-    console.log('[Audit Log] Rejected mappings:', JSON.stringify(rejectedMappings, null, 2));
+    console.log('[Audit Log] Direct Canonical Mappings:', JSON.stringify(directMappings, null, 2));
     console.log('[Audit Log] Rendered Dynamic Form:', JSON.stringify(updatedTemplate.map((f) => ({ label: f.label, value: f.value })), null, 2));
-    console.log('=============================================================================');
+    console.log('=======================================================================');
 
     setExtractedFields(updatedTemplate);
 
