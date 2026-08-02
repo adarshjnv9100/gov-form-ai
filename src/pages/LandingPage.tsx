@@ -39,7 +39,7 @@ export const LandingPage: React.FC = () => {
               className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/90 border border-blue-200/80 shadow-sm text-xs font-semibold text-blue-700"
             >
               <Sparkles className="w-4 h-4 text-blue-600" />
-              <span>Next-Gen Autonomous Form Auto-Fill • Powered by Kimi K2.6 & Supabase</span>
+              <span>Next-Gen Autonomous Form Auto-Fill • Powered by Gemini AI & Supabase</span>
             </motion.div>
 
             {/* Title */}
@@ -110,7 +110,7 @@ export const LandingPage: React.FC = () => {
                   <span className="text-xs font-mono text-slate-400 ml-2">govform_ai_vision_pipeline.ts</span>
                 </div>
                 <span className="text-xs font-semibold px-3 py-1 bg-blue-900/60 text-blue-300 rounded-full border border-blue-700">
-                  Kimi K2.6 OCR Active
+                  Gemini AI OCR Active
                 </span>
               </div>
 
@@ -171,7 +171,7 @@ export const LandingPage: React.FC = () => {
               <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
                 <Cpu className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">Kimi K2.6 Multimodal Vision</h3>
+              <h3 className="text-lg font-bold text-slate-900">Gemini AI Multimodal Vision</h3>
               <p className="text-xs text-slate-600 leading-relaxed">
                 Understands complex tabular government schemas, low-resolution handwriting, and multi-page official PDF templates.
               </p>

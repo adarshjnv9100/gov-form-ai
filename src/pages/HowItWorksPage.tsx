@@ -22,8 +22,8 @@ export const HowItWorksPage: React.FC = () => {
     },
     {
       num: '03',
-      title: 'Autonomous Kimi K2.6 AI Processing',
-      description: 'Our multimodal OCR extracts input coordinate locations, parses text, and matches citizen details with 99%+ accuracy.',
+      title: 'Autonomous Gemini AI Processing',
+      description: 'Our Gemini AI OCR extracts input coordinate locations, parses text, and matches citizen details with 99%+ accuracy.',
       icon: Cpu,
     },
     {

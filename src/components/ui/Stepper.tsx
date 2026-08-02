@@ -10,7 +10,7 @@ interface StepperProps {
 const STEPS = [
   { step: 1, title: 'Form Upload', subtitle: 'Upload Form PDF', icon: FileText },
   { step: 2, title: 'Supporting Docs', subtitle: 'Aadhaar, Passport, PAN', icon: Upload },
-  { step: 3, title: 'AI Processing', subtitle: 'Kimi K2.6 OCR Engine', icon: Cpu },
+  { step: 3, title: 'AI Processing', subtitle: 'Gemini AI OCR Engine', icon: Cpu },
   { step: 4, title: 'Review Data', subtitle: 'Verify & Edit Fields', icon: Edit3 },
   { step: 5, title: 'Download PDF', subtitle: 'Official Auto-Filled Form', icon: Download },
 ];

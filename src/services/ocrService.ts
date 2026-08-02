@@ -1,8 +1,8 @@
 // ============================================================
 // OCR SERVICE
 // Sends Cloudinary URLs to the backend /api/ocr route.
-// The backend proxies the call to NVIDIA Kimi K2.6 Vision.
-// The NVIDIA API key is NEVER present in this file.
+// The backend proxies the call to Gemini AI Vision.
+// The Gemini API key is NEVER present in this file.
 // ============================================================
 
 import { ExtractedField, FieldCategory } from '../types';

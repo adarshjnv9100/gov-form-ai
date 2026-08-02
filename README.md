@@ -2,19 +2,19 @@
 
 [![Vercel Deployment](https://img.shields.io/badge/Vercel-Deployed-success?style=for-the-badge&logo=vercel)](https://github.com/adarshjnv9100/gov-form-ai.git)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
-[![NVIDIA AI](https://img.shields.io/badge/NVIDIA-Nemotron--3-76B900?style=for-the-badge&logo=nvidia)](https://build.nvidia.com/)
+[![Gemini AI](https://img.shields.io/badge/Gemini-AI-4285F4?style=for-the-badge&logo=google)](https://ai.google.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase)](https://supabase.com/)
 [![Cloudinary](https://img.shields.io/badge/Cloudinary-RAW--PDF--Vault-3448C5?style=for-the-badge&logo=cloudinary)](https://cloudinary.com/)
 
-An AI-native, autonomous government document processing engine powered by **Moonshot AI Kimi K2.6 Vision**, **NVIDIA Nemotron Reasoning**, **pdf-lib**, **Supabase**, and **Cloudinary**.
+An AI-native, autonomous government document processing engine powered by **Gemini AI OCR & Vision**, **pdf-lib**, **Supabase**, and **Cloudinary**.
 
 ---
 
 ## 🚀 Key Features
 
 - **📄 Official Government PDF Template Generation**: Uses `pdf-lib` to generate official A4 government forms with Helvetica typography, security headers, SHA-256 digital stamps, and clean key-value grids.
-- **🤖 Moonshot AI Kimi K2.6 Multimodal Vision OCR**: Performs document parsing across 50+ official government document types (Aadhaar, PAN, Passport, Driving License, Voter ID, Income Certificate, Bank Passbook, Utility Bills, etc.).
-- **🧠 NVIDIA Nemotron Set-Cover Reasoning Engine**: Analyzes missing form fields and recommends the **MINIMUM number of supporting documents** that cover the **MAXIMUM missing fields**.
+- **🤖 Gemini AI Multimodal Vision OCR**: Performs document parsing across 50+ official government document types (Aadhaar, PAN, Passport, Driving License, Voter ID, Income Certificate, Bank Passbook, Utility Bills, etc.).
+- **🧠 Gemini AI Document Recommendation Engine**: Analyzes missing form fields and recommends the **MINIMUM number of supporting documents** that cover the **MAXIMUM missing fields**.
 - **🎯 Robust Canonical Field Mapping Engine**:
   - Exact & Synonym Dictionary Matching (`CANONICAL_SYNONYMS`).
   - OCR Typo Correction (`moblle` → `mobile`, `passprot` → `passport`, `ifcs` → `ifsc`).
@@ -34,13 +34,13 @@ An AI-native, autonomous government document processing engine powered by **Moon
                   [Cloudinary RAW Vault]
                             │
                             ▼
-           [Kimi K2.6 Multimodal Vision OCR]
+           [Gemini AI Multimodal Vision OCR]
                             │
                             ▼
          [Canonical Key Normalization & Fuzzy Engine]
                             │
                             ▼
-          [NVIDIA Nemotron Set-Cover Reasoning]
+          [Gemini AI Document Recommendation]
                             │
                             ▼
           [Review Page: 🟢 Auto / 🟡 Review / 🔴 Missing]
@@ -71,10 +71,8 @@ VITE_CLOUDINARY_UPLOAD_PRESET=government-form-ai
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
 NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=government-form-ai
 
-# NVIDIA API (Nemotron Reasoning & Kimi Vision)
-VITE_NVIDIA_API_KEY=nvapi-your-nvidia-api-key
-VITE_NVIDIA_API_URL=https://integrate.api.nvidia.com/v1/chat/completions
-VITE_NVIDIA_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+# Gemini AI API
+GEMINI_API_KEY=your-gemini-api-key
 ```
 
 ---

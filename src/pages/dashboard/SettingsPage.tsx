@@ -18,7 +18,7 @@ export const SettingsPage: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900">System & Integration Settings</h1>
         <p className="text-xs text-slate-500 mt-1">
-          Configure Supabase PostgreSQL database connection, Cloudinary storage bucket, and NVIDIA / Kimi AI endpoints.
+          Configure Supabase PostgreSQL database connection, Cloudinary storage bucket, and Gemini AI endpoints.
         </p>
       </div>
 

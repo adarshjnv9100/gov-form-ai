@@ -16,12 +16,12 @@ export const Footer: React.FC = () => {
               <span className="font-bold text-xl text-white tracking-tight">Government Form AI</span>
             </div>
             <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
-              Sovereign AI-powered government document processing and autonomous form filling platform. Built with enterprise-grade encryption and Kimi K2.6 Vision model.
+              Sovereign AI-powered government document processing and autonomous form filling platform. Built with enterprise-grade encryption and Gemini AI model.
             </p>
             <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
               <span className="flex items-center gap-1.5"><Lock className="w-4 h-4 text-emerald-400" /> 256-Bit AES</span>
               <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-blue-400" /> ISO 27001</span>
-              <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4 text-teal-400" /> Kimi K2.6 Engine</span>
+              <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4 text-teal-400" /> Gemini AI Engine</span>
             </div>
           </div>
 
@@ -53,7 +53,7 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-sm">
               <li><span className="text-slate-400">Supabase PostgreSQL</span></li>
               <li><span className="text-slate-400">Cloudinary Encrypted Vault</span></li>
-              <li><span className="text-slate-400">NVIDIA Build Microservices</span></li>
+              <li><span className="text-slate-400">Gemini AI Services</span></li>
               <li><span className="text-slate-400">Vercel Edge Network</span></li>
             </ul>
           </div>

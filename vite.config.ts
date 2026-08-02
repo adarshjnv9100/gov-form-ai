@@ -15,8 +15,8 @@ export default defineConfig({
     proxy: {
       // Dev proxy: routes /api/* to local handler equivalents.
       // In production, Vercel serves these from the /api directory directly.
-      // During local dev, we proxy OCR and Nemotron requests through the
-      // NVIDIA endpoint using the NVIDIA_API_KEY from .env.local (no VITE_ prefix).
+      // During local dev, we proxy OCR and recommendation requests through the
+      // Gemini AI endpoint using the GEMINI_API_KEY from .env.local (no VITE_ prefix).
       '/api/ocr': {
         target: 'http://localhost:3000',
         rewrite: () => '/api/ocr',

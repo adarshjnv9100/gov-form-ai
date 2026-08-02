@@ -1,6 +1,6 @@
 // ============================================================
 // VERCEL SERVERLESS FUNCTION: /api/nemotron
-// Clean document recommendation placeholder. Zero NVIDIA/Nemotron dependencies.
+// Clean document recommendation endpoint using Gemini AI.
 // ============================================================
 
 interface VercelRequest {

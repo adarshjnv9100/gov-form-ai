@@ -151,7 +151,7 @@ export class PDFService {
       borderWidth: 1,
     });
 
-    lastPage.drawText(sanitizeTextForPDF('VALIDATED BY GOVERNMENT FORM AI • KIMI K2.6 MULTIMODAL VISION'), {
+    lastPage.drawText(sanitizeTextForPDF('VALIDATED BY GOVERNMENT FORM AI • GEMINI AI MULTIMODAL VISION'), {
       x: 45, y: 62, size: 8,
       font: fontHelveticaBold, color: rgb(0.15, 0.39, 0.92),
     });

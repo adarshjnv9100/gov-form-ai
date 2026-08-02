@@ -154,7 +154,7 @@ const FIELD_TO_DOCUMENTS: Record<string, { document: string; docTypeTag: string;
   ],
 };
 
-// ── Nemotron / Gemini Recommendation Service ──────────────────────────────
+// ── Document Recommendation Service (Gemini AI) ──────────────────────────────
 
 export class NemotronService {
   /**
