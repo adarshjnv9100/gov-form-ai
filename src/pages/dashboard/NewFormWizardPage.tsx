@@ -18,7 +18,7 @@ import { PDFService, PDFGenerationResult } from '../../services/pdfService';
 import { PDFViewerModal } from '../../components/document/PDFViewerModal';
 import { AIAssistantPanel } from '../../components/ai/AIAssistantPanel';
 import { NemotronService, NemotronRecommendationResponse, RecommendedDocumentItem } from '../../services/nemotronService';
-import { upsertSubmission, upsertForm, createDraftSubmission } from '../../services/submissionService';
+import { upsertSubmission, upsertForm, createDraftSubmission, markSubmissionCompleted } from '../../services/submissionService';
 import { computeConfidenceScore, computeCompletionPercentage, ExtractedField, UploadedFile } from '../../types';
 import { VoiceEvents } from '../../services/VoiceEvents';
 import {
@@ -245,37 +245,28 @@ export const NewFormWizardPage: React.FC = () => {
         activeSubmissionId
       );
 
+      if (!res || !res.isValidPdf) {
+        throw new Error('PDF generation produced invalid PDF output.');
+      }
+
       setPdfResult(res);
 
-      // 2. Persist submission to Supabase (real confidence score, real file count)
+      // 3. Mark submission as completed in Supabase upon successful PDF generation
       if (user?.id) {
-        const confidenceScore  = computeConfidenceScore(activeFields);
-        const supportingCount  = supportingFiles.length + 1; // +1 for the form itself
+        const supportingCount = supportingFiles.length + 1; // +1 for the form itself
 
-        await upsertSubmission({
-          id:                  activeSubmissionId,
-          userId:              user.id,
+        await markSubmissionCompleted({
+          submissionId: activeSubmissionId,
+          userId: user.id,
           formTitle,
           formCode,
-          status:              'COMPLETED',
-          extractedFields:     activeFields,
-          pdfUrl:              res.pdfUrl,
-          supportingFilesCount: supportingCount,
-        });
-
-        await upsertForm({
-          submissionId:        activeSubmissionId,
-          userId:              user.id,
-          formTitle,
-          formCode,
-          status:              'COMPLETED',
-          extractedFields:     activeFields,
-          pdfUrl:              res.pdfUrl,
+          extractedFields: activeFields,
+          pdfUrl: res.pdfUrl,
           supportingFilesCount: supportingCount,
         });
       }
 
-      // 3. Update local submissions list
+      // 4. Update local submissions list
       await addSubmission({
         id:                  activeSubmissionId,
         submissionId:        activeSubmissionId,
@@ -291,8 +282,9 @@ export const NewFormWizardPage: React.FC = () => {
 
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       setCurrentStep(5);
-      addToast('PDF Generated!', `Submission ${activeSubmissionId.slice(0, 8)} saved to Supabase.`, 'success');
+      addToast('PDF Generated!', `Submission ${activeSubmissionId.slice(0, 8)} marked as completed.`, 'success');
     } catch (err: any) {
+      console.warn('[NewFormWizardPage] PDF generation failed:', err);
       addToast('PDF Generation Failed', err?.message || 'Error compiling PDF form.', 'error');
     } finally {
       setIsGeneratingPdf(false);
@@ -301,12 +293,37 @@ export const NewFormWizardPage: React.FC = () => {
 
   // ── Download Handler ───────────────────────────────────────
 
-  const handleDownloadGenerated = () => {
-    if (pdfResult?.pdfBytes) {
+  const handleDownloadGenerated = async () => {
+    try {
+      if (!pdfResult?.pdfBytes || pdfResult.pdfBytes.length === 0) {
+        throw new Error('PDF bytes unavailable for download.');
+      }
+
+      // Trigger browser download
       PDFService.downloadPDFFile(
         pdfResult.pdfBytes,
         `${formFile?.name.replace(/\.[^/.]+$/, '') || 'Form'}_${activeSubmissionId.slice(0, 6)}.pdf`
       );
+
+      // Successful download! Ensure submission status is marked completed in Supabase
+      if (user?.id && activeSubmissionId) {
+        const formTitle = formFile?.name.replace(/\.[^/.]+$/, '') || 'Government Form Auto-Fill';
+        const formCode  = 'GOV-AUTO-2026';
+        const supportingCount = supportingFiles.length + 1;
+
+        await markSubmissionCompleted({
+          submissionId: activeSubmissionId,
+          userId: user.id,
+          formTitle,
+          formCode,
+          extractedFields: activeFields,
+          pdfUrl: pdfResult.pdfUrl,
+          supportingFilesCount: supportingCount,
+        });
+      }
+    } catch (err: any) {
+      console.warn('[NewFormWizardPage] Download failed:', err);
+      addToast('Download Failed', err?.message || 'Error downloading PDF file.', 'error');
     }
   };
 

@@ -50,6 +50,8 @@ export const OverviewPage: React.FC = () => {
         return;
       }
 
+      console.log('[Dashboard] Refreshing statistics');
+
       try {
         // 1. Uploaded Documents count for logged-in user only
         const { count: docCount } = await supabase
@@ -68,10 +70,11 @@ export const OverviewPage: React.FC = () => {
           setDbDocCount(docCount || 0);
 
           if (subData && subData.length > 0) {
-            const completed = subData.filter((s) => s.status === 'COMPLETED').length;
-            const processing = subData.filter((s) => s.status === 'PROCESSING' || s.status === 'DRAFT').length;
+            const completed = subData.filter((s) => s.status?.toLowerCase() === 'completed').length;
+            const processing = subData.filter((s) => s.status?.toLowerCase() === 'processing' || s.status?.toLowerCase() === 'draft').length;
 
             setCompletedCount(completed);
+            console.log('[Dashboard] Completed count updated');
             setProcessingCount(processing);
 
             const mapped: FormSubmission[] = subData.map((s) => ({
@@ -80,7 +83,7 @@ export const OverviewPage: React.FC = () => {
               formTitle: s.form_title,
               formCode: s.form_code || 'GOV-2026',
               createdAt: s.created_at,
-              status: s.status as any,
+              status: (s.status?.toLowerCase() === 'completed' ? 'COMPLETED' : 'PROCESSING') as any,
               extractedFields: s.extracted_fields || [],
               pdfUrl: s.pdf_url,
               supportingFilesCount: s.supporting_files_count || 0,
@@ -89,6 +92,7 @@ export const OverviewPage: React.FC = () => {
             setUserSubmissions(mapped);
           } else {
             setCompletedCount(0);
+            console.log('[Dashboard] Completed count updated');
             setProcessingCount(0);
             setUserSubmissions([]);
           }
@@ -102,8 +106,23 @@ export const OverviewPage: React.FC = () => {
 
     fetchUserData();
 
+    window.addEventListener('submission_updated', fetchUserData);
+
+    const channel = supabase
+      .channel('public:submissions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'submissions', filter: `user_id=eq.${user?.id}` },
+        () => {
+          fetchUserData();
+        }
+      )
+      .subscribe();
+
     return () => {
       isSubscribed = false;
+      window.removeEventListener('submission_updated', fetchUserData);
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
@@ -244,7 +263,7 @@ export const OverviewPage: React.FC = () => {
                     <td className="py-4 px-5 font-mono text-slate-600">{sub.submissionId ? sub.submissionId.slice(0, 8) : sub.id.slice(0, 8)}...</td>
                     <td className="py-4 px-5 text-slate-500">{new Date(sub.createdAt).toLocaleDateString()}</td>
                     <td className="py-4 px-5 text-center">
-                      {sub.status === 'COMPLETED' ? (
+                      {sub.status?.toLowerCase() === 'completed' || sub.status === 'COMPLETED' ? (
                         <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
                           Completed
                         </span>

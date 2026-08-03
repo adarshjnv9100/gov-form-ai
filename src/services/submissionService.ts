@@ -21,13 +21,24 @@ export async function createDraftSubmission(
   if (!submissionId || !userId || userId === 'anonymous') return;
   const timestamp = new Date().toISOString();
 
+  // Check if submission is already completed to avoid overwriting completed status
+  const { data: existing } = await supabase
+    .from('submissions')
+    .select('status')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (existing?.status?.toLowerCase() === 'completed') {
+    return;
+  }
+
   const { error } = await supabase.from('submissions').upsert(
     {
       id: submissionId,
       user_id: userId,
       form_title: formTitle,
       form_code: formCode,
-      status: 'DRAFT',
+      status: 'processing',
       confidence_score: 0,
       supporting_files_count: 0,
       updated_at: timestamp,
@@ -37,6 +48,92 @@ export async function createDraftSubmission(
 
   if (error) {
     console.warn('[SubmissionService] createDraftSubmission warning:', error.message);
+  }
+}
+
+// ── Mark Submission Completed ─────────────────────────────
+
+export interface MarkSubmissionCompletedParams {
+  submissionId: string;
+  userId: string;
+  formTitle?: string;
+  formCode?: string;
+  extractedFields?: ExtractedField[];
+  pdfUrl?: string;
+  supportingFilesCount?: number;
+}
+
+export async function markSubmissionCompleted(params: MarkSubmissionCompletedParams): Promise<void> {
+  if (!params.submissionId || !params.userId || params.userId === 'anonymous') return;
+
+  const timestamp = new Date().toISOString();
+  const confidenceScore = params.extractedFields ? computeConfidenceScore(params.extractedFields) : 0;
+
+  const updatePayload: Record<string, any> = {
+    status: 'completed',
+    completed_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  if (params.formTitle) updatePayload.form_title = params.formTitle;
+  if (params.formCode) updatePayload.form_code = params.formCode;
+  if (params.pdfUrl) updatePayload.pdf_url = params.pdfUrl;
+  if (params.supportingFilesCount !== undefined) updatePayload.supporting_files_count = params.supportingFilesCount;
+  if (params.extractedFields) updatePayload.confidence_score = confidenceScore;
+
+  const { error: subError } = await supabase
+    .from('submissions')
+    .update(updatePayload)
+    .eq('id', params.submissionId);
+
+  if (subError) {
+    const { error: upsertErr } = await supabase.from('submissions').upsert(
+      {
+        id: params.submissionId,
+        user_id: params.userId,
+        form_title: params.formTitle || 'Government Form Auto-Fill',
+        form_code: params.formCode || 'GOV-AUTO-2026',
+        status: 'completed',
+        completed_at: timestamp,
+        updated_at: timestamp,
+        confidence_score: confidenceScore,
+        supporting_files_count: params.supportingFilesCount || 0,
+        pdf_url: params.pdfUrl || null,
+      },
+      { onConflict: 'id' }
+    );
+    if (upsertErr) {
+      console.warn('[SubmissionService] markSubmissionCompleted upsert error:', upsertErr.message);
+    } else {
+      console.log('[Submission] Status updated to completed');
+    }
+  } else {
+    console.log('[Submission] Status updated to completed');
+  }
+
+  // Also update forms table in Supabase
+  const formId = `form_${params.submissionId}`;
+  await supabase.from('forms').upsert(
+    {
+      id: formId,
+      submission_id: params.submissionId,
+      user_id: params.userId,
+      form_title: params.formTitle || 'Government Form Auto-Fill',
+      form_code: params.formCode || 'GOV-AUTO-2026',
+      status: 'completed',
+      completed_at: timestamp,
+      updated_at: timestamp,
+      extracted_fields: params.extractedFields || [],
+      confidence_score: confidenceScore,
+      pdf_url: params.pdfUrl || null,
+      supporting_files_count: params.supportingFilesCount || 0,
+    },
+    { onConflict: 'id' }
+  );
+
+  // Notify UI components immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('submission_updated'));
   }
 }
 

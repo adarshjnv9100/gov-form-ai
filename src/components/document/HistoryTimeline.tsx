@@ -13,7 +13,7 @@ export const HistoryTimeline: React.FC<HistoryTimelineProps> = ({
   onSelectSubmission,
 }) => {
   const getStatusBadge = (status: string) => {
-    switch (status) {
+    switch (status?.toUpperCase()) {
       case 'COMPLETED':
         return (
           <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
@@ -21,9 +21,10 @@ export const HistoryTimeline: React.FC<HistoryTimelineProps> = ({
           </span>
         );
       case 'PROCESSING':
+      case 'DRAFT':
         return (
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-200 animate-pulse">
-            <Clock className="w-3.5 h-3.5" /> AI Processing
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200">
+            <Clock className="w-3.5 h-3.5" /> Processing
           </span>
         );
       default:
