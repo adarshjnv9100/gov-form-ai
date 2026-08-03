@@ -3,7 +3,9 @@ import { motion } from 'framer-motion';
 import { X, Download, ShieldCheck, FileText, ExternalLink, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { PDFService } from '../../services/pdfService';
+import { markSubmissionCompleted } from '../../services/submissionService';
 
 interface PDFViewerModalProps {
   isOpen: boolean;
@@ -11,6 +13,7 @@ interface PDFViewerModalProps {
   title?: string;
   pdfUrl?: string;
   pdfBytes?: Uint8Array;
+  submissionId?: string;
 }
 
 export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
@@ -19,7 +22,9 @@ export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
   title = 'Official Government Form PDF',
   pdfUrl,
   pdfBytes,
+  submissionId,
 }) => {
+  const { user } = useAuth();
   const { addToast } = useToast();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -122,11 +127,32 @@ export const PDFViewerModal: React.FC<PDFViewerModalProps> = ({
     };
   }, [isOpen, pdfUrl, pdfBytes]);
 
-  const handleDownload = () => {
-    if (pdfBytes) {
-      PDFService.downloadPDFFile(pdfBytes, `${title.replace(/\s+/g, '_')}.pdf`);
-    } else if (pdfUrl) {
-      window.open(pdfUrl, '_blank');
+  const handleDownload = async () => {
+    try {
+      if (pdfBytes) {
+        PDFService.downloadPDFFile(pdfBytes, `${title.replace(/\s+/g, '_')}.pdf`);
+      } else if (pdfUrl) {
+        window.open(pdfUrl, '_blank');
+      } else {
+        throw new Error('PDF resource unavailable for download.');
+      }
+
+      console.log('[Submission] Download completed');
+
+      if (submissionId && user?.id) {
+        const isSuccess = await markSubmissionCompleted({
+          submissionId,
+          userId: user.id,
+          pdfUrl,
+        });
+
+        if (!isSuccess) {
+          addToast('Status Update Warning', 'PDF downloaded but status update failed.', 'warning');
+        }
+      }
+    } catch (err: any) {
+      console.warn('[PDFViewerModal] Download failed:', err);
+      addToast('Download Failed', err?.message || 'Error downloading PDF file.', 'error');
     }
   };
 

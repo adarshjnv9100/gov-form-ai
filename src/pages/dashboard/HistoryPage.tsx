@@ -10,7 +10,7 @@ import { FileText } from 'lucide-react';
 export const HistoryPage: React.FC = () => {
   const { user } = useAuth();
   const [userSubmissions, setUserSubmissions] = useState<FormSubmission[]>([]);
-  const [activePdf, setActivePdf] = useState<{ title: string; url?: string } | null>(null);
+  const [activePdf, setActivePdf] = useState<{ title: string; url?: string; submissionId?: string } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const fetchHistory = async () => {
@@ -54,6 +54,24 @@ export const HistoryPage: React.FC = () => {
 
   useEffect(() => {
     fetchHistory();
+
+    window.addEventListener('submission_updated', fetchHistory);
+
+    const channel = supabase
+      .channel('public:submissions:history')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'submissions', filter: `user_id=eq.${user?.id}` },
+        () => {
+          fetchHistory();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('submission_updated', fetchHistory);
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   return (
@@ -83,7 +101,7 @@ export const HistoryPage: React.FC = () => {
         <HistoryTimeline
           submissions={userSubmissions}
           onSelectSubmission={(sub: FormSubmission) =>
-            setActivePdf({ title: sub.formTitle, url: sub.pdfUrl })
+            setActivePdf({ title: sub.formTitle, url: sub.pdfUrl, submissionId: sub.submissionId || sub.id })
           }
         />
       )}
@@ -93,6 +111,7 @@ export const HistoryPage: React.FC = () => {
         onClose={() => setActivePdf(null)}
         title={activePdf?.title}
         pdfUrl={activePdf?.url}
+        submissionId={activePdf?.submissionId}
       />
     </div>
   );

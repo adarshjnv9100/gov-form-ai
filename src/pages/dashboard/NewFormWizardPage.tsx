@@ -305,13 +305,15 @@ export const NewFormWizardPage: React.FC = () => {
         `${formFile?.name.replace(/\.[^/.]+$/, '') || 'Form'}_${activeSubmissionId.slice(0, 6)}.pdf`
       );
 
+      console.log('[Submission] Download completed');
+
       // Successful download! Ensure submission status is marked completed in Supabase
       if (user?.id && activeSubmissionId) {
         const formTitle = formFile?.name.replace(/\.[^/.]+$/, '') || 'Government Form Auto-Fill';
         const formCode  = 'GOV-AUTO-2026';
         const supportingCount = supportingFiles.length + 1;
 
-        await markSubmissionCompleted({
+        const isSuccess = await markSubmissionCompleted({
           submissionId: activeSubmissionId,
           userId: user.id,
           formTitle,
@@ -320,6 +322,10 @@ export const NewFormWizardPage: React.FC = () => {
           pdfUrl: pdfResult.pdfUrl,
           supportingFilesCount: supportingCount,
         });
+
+        if (!isSuccess) {
+          addToast('Status Update Failed', 'PDF downloaded but status update failed.', 'warning');
+        }
       }
     } catch (err: any) {
       console.warn('[NewFormWizardPage] Download failed:', err);

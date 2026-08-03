@@ -25,7 +25,7 @@ export const OverviewPage: React.FC = () => {
   const { startNewSubmission } = useFormWorkflow();
   const navigate = useNavigate();
 
-  const [selectedSubmissionPdf, setSelectedSubmissionPdf] = useState<{ title: string; pdfUrl?: string } | null>(null);
+  const [selectedSubmissionPdf, setSelectedSubmissionPdf] = useState<{ title: string; pdfUrl?: string; submissionId?: string } | null>(null);
   const [userSubmissions, setUserSubmissions] = useState<FormSubmission[]>([]);
   const [dbDocCount, setDbDocCount] = useState<number>(0);
   const [completedCount, setCompletedCount] = useState<number>(0);
@@ -96,6 +96,7 @@ export const OverviewPage: React.FC = () => {
             setProcessingCount(0);
             setUserSubmissions([]);
           }
+          console.log('[Dashboard] Refresh complete');
         }
       } catch (err) {
         console.warn('Dashboard fetch error:', err);
@@ -275,7 +276,7 @@ export const OverviewPage: React.FC = () => {
                     </td>
                     <td className="py-4 px-5 text-right">
                       <button
-                        onClick={() => setSelectedSubmissionPdf({ title: sub.formTitle, pdfUrl: sub.pdfUrl })}
+                        onClick={() => setSelectedSubmissionPdf({ title: sub.formTitle, pdfUrl: sub.pdfUrl, submissionId: sub.submissionId || sub.id })}
                         className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold px-2.5 py-1 rounded-lg hover:bg-blue-50"
                       >
                         <Eye className="w-3.5 h-3.5" /> View PDF
@@ -294,6 +295,7 @@ export const OverviewPage: React.FC = () => {
         onClose={() => setSelectedSubmissionPdf(null)}
         title={selectedSubmissionPdf?.title}
         pdfUrl={selectedSubmissionPdf?.pdfUrl}
+        submissionId={selectedSubmissionPdf?.submissionId}
       />
     </div>
   );
